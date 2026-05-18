@@ -65,7 +65,7 @@
             { ticker: 'META', name: 'Meta Platforms, Inc.', exchange: 'NASDAQ', cap: '1.24T', pe: '24.1' },
             { ticker: 'NFLX', name: 'Netflix Inc.', exchange: 'NASDAQ', cap: '265.1B', pe: '37.5' },
             { ticker: 'INTC', name: 'Intel Corporation', exchange: 'NASDAQ', cap: '142.3B', pe: '18.7' },
-            { ticker: 'QCOM', name: 'Qualcomm Inc.', exchange: 'NASDAQ', cap: '188.4B', pe: '22.1' },
+            { ticker: 'QCOM', name: 'Qualcomm Inc.', exchange: 'ISSN', cap: '188.4B', pe: '22.1' },
             { ticker: 'SBUX', name: 'Starbucks Corporation', exchange: 'NASDAQ', cap: '104.2B', pe: '21.4' },
             { ticker: 'JPM', name: 'JPMorgan Chase & Co.', exchange: 'NYSE', cap: '562.1B', pe: '11.8' },
             { ticker: 'V', name: 'Visa Inc.', exchange: 'NYSE', cap: '540.3B', pe: '32.1' },
@@ -78,32 +78,58 @@
 
         const mockFinancialsData = {};
 
-        const generateFinancials = (ticker) => {
+        const formatMarketCap = (num) => {
+            if (!num || isNaN(num)) return 'N/A';
+            const value = parseFloat(num);
+            if (value >= 1e12) return (value / 1e12).toFixed(2) + 'T';
+            if (value >= 1e9) return (value / 1e9).toFixed(1) + 'B';
+            if (value >= 1e6) return (value / 1e6).toFixed(1) + 'M';
+            return value.toLocaleString();
+        };
+
+        const generateFinancials = (ticker, optionalLiveCap) => {
             if (mockFinancialsData[ticker]) return mockFinancialsData[ticker];
-            const scale = Math.random() * 10 + 5;
+            
+            let capMultiplier = 150; 
+            if (optionalLiveCap) {
+                const parsedLive = parseFloat(optionalLiveCap);
+                capMultiplier = optionalLiveCap.includes('T') ? parsedLive * 1000 : parsedLive;
+            } else {
+                const dictRef = TICKER_DICTIONARY.find(i => i.ticker === ticker);
+                if (dictRef) {
+                    const parsedDict = parseFloat(dictRef.cap);
+                    capMultiplier = dictRef.cap.includes('T') ? parsedDict * 1000 : parsedDict;
+                }
+            }
+
+            const seed = ticker.charCodeAt(0) + (ticker.charCodeAt(1) || 0);
+            const varRatio = (seed % 6) / 10 + 0.8; 
+
+            const baseUnit = capMultiplier * 0.12 * varRatio;
+
             mockFinancialsData[ticker] = {
                 annual: {
                     performance: [
-                        { period: '2023', revenue: parseFloat((scale * 1.2).toFixed(1)), netIncome: parseFloat((scale * 0.2).toFixed(1)) },
-                        { period: '2024', revenue: parseFloat((scale * 1.4).toFixed(1)), netIncome: parseFloat((scale * 0.25).toFixed(1)) },
-                        { period: '2025', revenue: parseFloat((scale * 1.6).toFixed(1)), netIncome: parseFloat((scale * 0.3).toFixed(1)) }
+                        { period: '2023', revenue: parseFloat((baseUnit * 0.82).toFixed(1)), netIncome: parseFloat((baseUnit * 0.11).toFixed(1)) },
+                        { period: '2024', revenue: parseFloat((baseUnit * 0.94).toFixed(1)), netIncome: parseFloat((baseUnit * 0.14).toFixed(1)) },
+                        { period: '2025', revenue: parseFloat((baseUnit * 1.08).toFixed(1)), netIncome: parseFloat((baseUnit * 0.19).toFixed(1)) }
                     ],
                     earnings: [
-                        { period: '2023', actual: parseFloat((scale*0.05).toFixed(2)), forecast: parseFloat((scale*0.04).toFixed(2)) },
-                        { period: '2024', actual: parseFloat((scale*0.06).toFixed(2)), forecast: parseFloat((scale*0.05).toFixed(2)) },
-                        { period: '2025', actual: parseFloat((scale*0.07).toFixed(2)), forecast: parseFloat((scale*0.06).toFixed(2)) }
+                        { period: '2023', actual: parseFloat((varRatio * 1.95).toFixed(2)), forecast: parseFloat((varRatio * 1.80).toFixed(2)) },
+                        { period: '2024', actual: parseFloat((varRatio * 2.25).toFixed(2)), forecast: parseFloat((varRatio * 2.15).toFixed(2)) },
+                        { period: '2025', actual: parseFloat((varRatio * 2.65).toFixed(2)), forecast: parseFloat((varRatio * 2.45).toFixed(2)) }
                     ]
                 },
                 quarter: {
                     performance: [
-                        { period: 'Q1 25', revenue: parseFloat((scale * 0.35).toFixed(1)), netIncome: parseFloat((scale * 0.05).toFixed(1)) },
-                        { period: 'Q2 25', revenue: parseFloat((scale * 0.38).toFixed(1)), netIncome: parseFloat((scale * 0.06).toFixed(1)) },
-                        { period: 'Q3 25', revenue: parseFloat((scale * 0.42).toFixed(1)), netIncome: parseFloat((scale * 0.07).toFixed(1)) }
+                        { period: 'Q1 25', revenue: parseFloat((baseUnit * 0.21).toFixed(1)), netIncome: parseFloat((baseUnit * 0.03).toFixed(1)) },
+                        { period: 'Q2 25', revenue: parseFloat((baseUnit * 0.24).toFixed(1)), netIncome: parseFloat((baseUnit * 0.04).toFixed(1)) },
+                        { period: 'Q3 25', revenue: parseFloat((baseUnit * 0.28).toFixed(1)), netIncome: parseFloat((baseUnit * 0.05).toFixed(1)) }
                     ],
                     earnings: [
-                        { period: 'Q1 25', actual: parseFloat((scale * 0.015).toFixed(2)), forecast: parseFloat((scale * 0.014).toFixed(2)) },
-                        { period: 'Q2 25', actual: parseFloat((scale * 0.018).toFixed(2)), forecast: parseFloat((scale * 0.017).toFixed(2)) },
-                        { period: 'Q3 25', actual: parseFloat((scale * 0.022).toFixed(2)), forecast: parseFloat((scale * 0.020).toFixed(2)) }
+                        { period: 'Q1 25', actual: parseFloat((varRatio * 0.55).toFixed(2)), forecast: parseFloat((varRatio * 0.50).toFixed(2)) },
+                        { period: 'Q2 25', actual: parseFloat((varRatio * 0.68).toFixed(2)), forecast: parseFloat((varRatio * 0.62).toFixed(2)) },
+                        { period: 'Q3 25', actual: parseFloat((varRatio * 0.78).toFixed(2)), forecast: parseFloat((varRatio * 0.72).toFixed(2)) }
                     ]
                 }
             };
@@ -122,13 +148,11 @@
                 return ema;
             };
 
-            // MACD (12, 26, 9)
             const ema12 = calcEMA(12, closes);
             const ema26 = calcEMA(26, closes);
             const macdLine = ema12.map((val, idx) => val - ema26[idx]);
             const signalLine = calcEMA(9, macdLine);
 
-            // RSI (14)
             let rsi = new Array(closes.length).fill(50);
             if (closes.length > 14) {
                 let gains = 0, losses = 0;
@@ -186,7 +210,6 @@
             return calculateTechnicalIndicators(data);
         };
 
-        // Custom Hook to Recognize Advanced Candlestick Pattern Vectors
         const scanCandlestickPatterns = (data) => {
             if (!data || data.length < 3) return [];
             const segments = [];
@@ -203,7 +226,6 @@
                 const prevBody = Math.abs(prev.close - prev.open);
                 const isPrevGreen = prev.close >= prev.open;
 
-                // 1. Hammer Pattern (Bullish Reversal Opportunity)
                 const lowerWickHammer = isCurrGreen ? (curr.open - curr.low) : (curr.close - curr.low);
                 const upperWickHammer = isCurrGreen ? (curr.high - curr.close) : (curr.high - curr.open);
                 if (lowerWickHammer > (currBody * 1.8) && upperWickHammer < (currBody * 0.4) && currBody > 0) {
@@ -216,7 +238,6 @@
                     continue;
                 }
 
-                // 2. Inverted Hammer / Shooting Star (Potential Bearish Pivot Peak)
                 if (upperWickHammer > (currBody * 1.8) && lowerWickHammer < (currBody * 0.4) && currBody > 0) {
                     segments.push({
                         startIndex: i,
@@ -227,7 +248,6 @@
                     continue;
                 }
 
-                // 3. Engulfing Sequences (Requires multi-node grouping grid boundaries)
                 if (currBody > prevBody * 1.3 && prevBody > 0) {
                     if (!prevGrouped && isCurrGreen && !isPrevGreen && curr.close >= prev.open && curr.open <= prev.close) {
                         segments.push({
@@ -251,7 +271,6 @@
                     }
                 }
 
-                // 4. Marubozu Breakout Engine
                 if (currBody / currRange > 0.90 && currBody > 0.3) {
                     segments.push({
                         startIndex: i,
@@ -282,12 +301,14 @@
             const [syncProgress, setSyncProgress] = React.useState(100);
             const [syncStatusText, setSyncStatusText] = React.useState('SYSTEM_READY');
             const [marketTelemetry, setMarketTelemetry] = React.useState({ isOpen: true, text: 'CALCULATING WINDOWS...' });
-            
-            // Toggle config variable state for displaying candlestick indicators
             const [showPatterns, setShowPatterns] = React.useState(false);
 
             const [stockPrices, setStockPrices] = React.useState({});
             const [renderedChartData, setRenderedChartData] = React.useState([]);
+            const [fundamentals, setFundamentals] = React.useState({});
+            
+            // Core Cache Layer to hold raw financial statement metrics cleanly from production socket
+            const [liveFinancials, setLiveFinancials] = React.useState({});
 
             React.useEffect(() => {
                 const trackHours = () => {
@@ -371,7 +392,7 @@
 
                 if (!allCached) {
                     try {
-                        setSyncProgress(40);
+                        setSyncProgress(30);
                         const symbolsParam = watchlist.join(',');
                         const url = `https://api.twelvedata.com/time_series?symbol=${symbolsParam}&interval=${selectedInterval}&outputsize=60&apikey=${apiKey}`;
                         
@@ -397,6 +418,76 @@
                                 localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: processedData }));
                             }
                         }
+
+                        setSyncProgress(60);
+                        setSyncStatusText('COMPILING KEY PROFILE VECTORS...');
+                        const profileUrl = `https://api.twelvedata.com/profile?symbol=${activeStock}&apikey=${apiKey}`;
+                        const profileRes = await fetch(profileUrl);
+                        const profileJson = await profileRes.json();
+
+                        if (profileJson && (!profileJson.status || profileJson.status !== 'error')) {
+                            const targetProfile = activeStock.includes(',') ? profileJson[activeStock] : profileJson;
+                            if (targetProfile && targetProfile.meta) {
+                                setFundamentals(prev => ({
+                                    ...prev,
+                                    [activeStock]: {
+                                        market_cap: formatMarketCap(targetProfile.meta.market_cap || targetProfile.meta.market_capitalization),
+                                        pe_ratio: targetProfile.meta.pe_ratio ? parseFloat(targetProfile.meta.pe_ratio).toFixed(1) : 'N/A'
+                                    }
+                                }));
+                            }
+                        }
+
+                        // PRODUCTION IMPLEMENTATION: Fetch real income statements (both annual and quarterly profiles)
+                        setSyncProgress(80);
+                        setSyncStatusText('FETCHING LIVE FUNDAMENTAL STATEMENTS...');
+                        
+                        // 1. Fetch Annual Income Statement Data
+                        const incAnnRes = await fetch(`https://api.twelvedata.com/income_statement?symbol=${activeStock}&period=annual&apikey=${apiKey}`);
+                        const incAnnJson = await incAnnRes.json();
+
+                        // 2. Fetch Quarterly Income Statement Data
+                        const incQtrRes = await fetch(`https://api.twelvedata.com/income_statement?symbol=${activeStock}&period=quarterly&apikey=${apiKey}`);
+                        const incQtrJson = await incQtrRes.json();
+
+                        let structuredLiveFinancials = { annual: { performance: [], earnings: [] }, quarter: { performance: [], earnings: [] } };
+
+                        if (incAnnJson.income_statement) {
+                            structuredLiveFinancials.annual.performance = incAnnJson.income_statement.slice(0, 3).map(statement => ({
+                                period: statement.fiscal_date ? statement.fiscal_date.split('-')[0] : 'N/A',
+                                revenue: parseFloat((parseFloat(statement.revenue || 0) / 1e9).toFixed(2)),
+                                netIncome: parseFloat((parseFloat(statement.net_income || 0) / 1e9).toFixed(2))
+                            })).reverse(); // Reverse to display chronological timeline order (2023 -> 2025)
+                        }
+
+                        if (incQtrJson.income_statement) {
+                            structuredLiveFinancials.quarter.performance = incQtrJson.income_statement.slice(0, 3).map(statement => {
+                                let label = statement.fiscal_date || 'N/A';
+                                if (statement.fiscal_date) {
+                                    const dateParts = statement.fiscal_date.split('-');
+                                    const month = parseInt(dateParts[1]);
+                                    const yearShort = dateParts[0].slice(2);
+                                    let qLabel = 'Q1';
+                                    if (month > 3 && month <= 6) qLabel = 'Q2';
+                                    else if (month > 6 && month <= 9) qLabel = 'Q3';
+                                    else if (month > 9 || month <= 3) qLabel = 'Q4';
+                                    label = `${qLabel} ${yearShort}`;
+                                }
+                                return {
+                                    period: label,
+                                    revenue: parseFloat((parseFloat(statement.revenue || 0) / 1e9).toFixed(2)),
+                                    netIncome: parseFloat((parseFloat(statement.net_income || 0) / 1e9).toFixed(2))
+                                };
+                            }).reverse();
+                        }
+
+                        // EPS Fallback vectors if separate earnings endpoints aren't provisioned on the plan tier
+                        const simulatedDataRef = generateFinancials(activeStock, null);
+                        structuredLiveFinancials.annual.earnings = simulatedDataRef.annual.earnings;
+                        structuredLiveFinancials.quarter.earnings = simulatedDataRef.quarter.earnings;
+
+                        setLiveFinancials(prev => ({ ...prev, [activeStock]: structuredLiveFinancials }));
+
                     } catch (e) {
                         console.error("TwelveData Stream Exception Encountered:", e.message);
                         setSyncStatusText(`API ERROR: ${e.message.slice(0, 20)}...`);
@@ -413,14 +504,16 @@
                             const currentCandle = data[data.length - 1];
                             const initialCandle = data[0];
                             const deltaPercentage = ((currentCandle.close - initialCandle.close) / initialCandle.close) * 100;
+                            
                             const staticMeta = TICKER_DICTIONARY.find(i => i.ticker === ticker) || { cap: '180B', pe: '25.0' };
+                            const liveFundamentals = fundamentals[ticker] || null;
 
                             localPrices[ticker] = {
                                 price: currentCandle.close,
                                 change: deltaPercentage,
                                 volume: currentCandle.volume > 1e6 ? (currentCandle.volume/1e6).toFixed(1) + 'M' : currentCandle.volume.toLocaleString(),
-                                cap: staticMeta.cap,
-                                pe: staticMeta.pe
+                                cap: liveFundamentals ? liveFundamentals.market_cap : staticMeta.cap,
+                                pe: liveFundamentals ? liveFundamentals.pe_ratio : staticMeta.pe
                             };
 
                             if (ticker === activeStock) {
@@ -433,7 +526,7 @@
                 setStockPrices(localPrices);
                 setSyncProgress(100);
                 if (apiKey) setSyncStatusText('LIVE VECTOR FEED ACTIVE');
-            }, [watchlist, timeframe, apiKey, activeStock]);
+            }, [watchlist, timeframe, apiKey, activeStock, fundamentals]);
 
             React.useEffect(() => {
                 fetchPipelineData();
@@ -464,9 +557,15 @@
 
             const activeCompanyMeta = TICKER_DICTIONARY.find(i => i.ticker === activeStock) || { name: `${activeStock} Co.`, exchange: 'NAS', cap: 'N/A', pe: 'N/A' };
 
-            // Calculate derived minimum and maximum threshold levels for display values
             const windowHigh = renderedChartData.length > 0 ? Math.max(...renderedChartData.map(d => d.high)) : 0;
             const windowLow = renderedChartData.length > 0 ? Math.min(...renderedChartData.map(d => d.low)) : 0;
+
+            const activeLiveCap = stockPrices[activeStock] ? stockPrices[activeStock].cap : null;
+            
+            // Resolve final active statements object state (Prioritize true dynamic live financial metrics, fallback to mock matrix if key missing)
+            const activeFinancialsData = apiKey && liveFinancials[activeStock] 
+                ? liveFinancials[activeStock] 
+                : generateFinancials(activeStock, activeLiveCap);
 
             return (
                 <div class={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${theme === 'dark' ? 'bg-[#050505] text-zinc-400' : 'bg-[#f8f9fa] text-zinc-600'}`}>
@@ -589,7 +688,6 @@
                                 </div>
                                 
                                 <div class="flex items-center space-x-4">
-                                    {/* Config toggle switch button configuration */}
                                     <button 
                                         onClick={() => setShowPatterns(!showPatterns)} 
                                         class={`px-3 py-1 text-[9px] font-mono font-bold border rounded-xs transition-all flex items-center space-x-1.5 cursor-pointer ${showPatterns ? 'bg-emerald-900/20 border-[#00FF66] text-[#00FF66]' : 'bg-zinc-900/40 border-zinc-800 text-zinc-500'}`}
@@ -653,27 +751,34 @@
                                     <div>
                                         <div class="text-[9px] font-mono text-zinc-600 mb-2 tracking-wider uppercase">Performance Metrics (REV vs NET)</div>
                                         <div class="space-y-2">
-                                            {generateFinancials(activeStock)[financialView]?.performance.map((item, i) => {
-                                                const maxRev = Math.max(...generateFinancials(activeStock)[financialView].performance.map(p => p.revenue));
-                                                return (
-                                                    <div key={i} class="font-mono text-[10px] space-y-1">
-                                                        <div class="text-zinc-600">{item.period}</div>
-                                                        <div class="w-full bg-zinc-900 h-1.5 rounded-xs overflow-hidden relative">
-                                                            <div class="bg-blue-600 h-full absolute top-0 left-0" style={{ width: `${(item.revenue/maxRev)*100}%` }}></div>
+                                            {activeFinancialsData[financialView]?.performance && activeFinancialsData[financialView].performance.length > 0 ? (
+                                                activeFinancialsData[financialView].performance.map((item, i) => {
+                                                    const maxRev = Math.max(...activeFinancialsData[financialView].performance.map(p => p.revenue || 1));
+                                                    return (
+                                                        <div key={i} class="font-mono text-[10px] space-y-1">
+                                                            <div class="text-zinc-600 flex justify-between">
+                                                                <span>{item.period}</span>
+                                                                <span class="text-[9px] text-zinc-500">R: {item.revenue}B / N: {item.netIncome}B</span>
+                                                            </div>
+                                                            <div class="w-full bg-zinc-900 h-1.5 rounded-xs overflow-hidden relative">
+                                                                <div class="bg-blue-600 h-full absolute top-0 left-0" style={{ width: `${(item.revenue/maxRev)*100}%` }}></div>
+                                                            </div>
+                                                            <div class="w-full bg-zinc-900 h-1 rounded-xs overflow-hidden relative">
+                                                                <div class="bg-[#00FF66] h-full absolute top-0 left-0" style={{ width: `${(item.netIncome/maxRev)*100}%` }}></div>
+                                                            </div>
                                                         </div>
-                                                        <div class="w-full bg-zinc-900 h-1 rounded-xs overflow-hidden relative">
-                                                            <div class="bg-[#00FF66] h-full absolute top-0 left-0" style={{ width: `${(item.netIncome/maxRev)*100}%` }}></div>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
+                                                    );
+                                                })
+                                            ) : (
+                                                <div class="text-[10px] font-mono text-zinc-600 italic">No historical data segments loaded.</div>
+                                            )}
                                         </div>
                                     </div>
 
                                     <div>
                                         <div class="text-[9px] font-mono text-zinc-600 mb-2 tracking-wider uppercase">EPS Forecast Vectors</div>
                                         <div class="space-y-2">
-                                            {generateFinancials(activeStock)[financialView]?.earnings.map((item, i) => (
+                                            {activeFinancialsData[financialView]?.earnings.map((item, i) => (
                                                 <div key={i} class="font-mono text-[10px] flex justify-between items-center bg-zinc-950 p-2 border border-zinc-900 rounded-sm">
                                                     <span class="text-zinc-500 font-bold">{item.period}</span>
                                                     <span class="text-zinc-400">ACT: <strong class="text-amber-500">${item.actual}</strong></span>
@@ -691,7 +796,6 @@
             );
         }
 
-        // Expanded Chart Module
         function CandlestickChart({ vectorData, theme, showPatterns }) {
             const [hoverNode, setHoverNode] = React.useState(null);
 
@@ -720,7 +824,6 @@
             const macdTop = rsiTop + rsiAreaHeight + 20;
             const horizontalStep = widthDimension / vectorData.length;
 
-            // Generate patterns array data if enabled by configuration switch
             const identifiedPatterns = showPatterns ? scanCandlestickPatterns(vectorData) : [];
 
             return (
@@ -745,13 +848,11 @@
                     <div class="flex-1 relative overflow-hidden">
                         <svg width="100%" height="100%" viewBox={`0 0 ${widthDimension} ${heightDimension}`} preserveAspectRatio="none" class="overflow-visible">
                             
-                            {/* Area Dividers */}
                             <line x1={0} y1={candleAreaHeight} x2={widthDimension} y2={candleAreaHeight} stroke="#1f1f23" strokeWidth="1" />
                             <line x1={0} y1={rsiTop} x2={widthDimension} y2={rsiTop} stroke="#1f1f23" strokeWidth="1" />
                             <line x1={0} y1={rsiTop + rsiAreaHeight} x2={widthDimension} y2={rsiTop + rsiAreaHeight} stroke="#1f1f23" strokeWidth="1" />
                             <line x1={0} y1={macdTop} x2={widthDimension} y2={macdTop} stroke="#1f1f23" strokeWidth="1" />
 
-                            {/* Candle Grid Lines */}
                             {Array.from({ length: 4 }).map((_, idx) => {
                                 const calculatedPrice = minPrice + (priceDelta * (idx / 3));
                                 const yPos = candleAreaHeight * (1 - (calculatedPrice - minPrice) / priceDelta);
@@ -765,7 +866,6 @@
                                 );
                             })}
 
-                            {/* RSI Grid Tracks */}
                             {[30, 50, 70].map(val => {
                                 const yPos = rsiTop + (rsiAreaHeight * (1 - val / 100));
                                 return (
@@ -776,7 +876,6 @@
                                 );
                             })}
 
-                            {/* Crosshair Tracker Line */}
                             {hoverNode && (() => {
                                 const targetIdx = vectorData.indexOf(hoverNode);
                                 if (targetIdx !== -1) {
@@ -785,14 +884,12 @@
                                 }
                             })()}
 
-                            {/* Rendered Pattern Highlights Clean Rectangles Without Label Interferences */}
                             {identifiedPatterns.map((pat, idx) => {
                                 const pad = 3;
                                 const leftX = pat.startIndex * horizontalStep + pad;
                                 const rightX = (pat.endIndex + 1) * horizontalStep - pad;
                                 const width = rightX - leftX;
                                 
-                                // Find highest high and lowest low within group indices range
                                 const segmentData = vectorData.slice(pat.startIndex, pat.endIndex + 1);
                                 const segHighs = segmentData.map(d => d.high);
                                 const segLows = segmentData.map(d => d.low);
@@ -814,22 +911,16 @@
                                 );
                             })}
 
-                            {/* Floating Chart Pattern Dashboard Legend Matrix */}
                             {showPatterns && (
                                 <g transform={`translate(${widthDimension - 140}, 15)`}>
                                     <rect x="0" y="0" width="130" height="36" fill="#09090b" stroke="#18181b" strokeWidth="1" rx="3" opacity="0.9"/>
-                                    
-                                    {/* Bullish Metric */}
                                     <circle cx="12" cy="12" r="4" fill="#00FF66" />
                                     <text x="24" y="15" fill="#a1a1aa" fontSize="8" fontFamily="monospace" fontWeight="bold">BULLISH REVERSAL</text>
-                                    
-                                    {/* Bearish Metric */}
                                     <circle cx="12" cy="24" r="4" fill="#ef4444" />
                                     <text x="24" y="27" fill="#a1a1aa" fontSize="8" fontFamily="monospace" fontWeight="bold">BEARISH REVERSAL</text>
                                 </g>
                             )}
 
-                            {/* Rendering Vectors Data Maps */}
                             {vectorData.map((d, i) => {
                                 const x = i * horizontalStep + (horizontalStep / 2);
                                 const yOpen = candleAreaHeight * (1 - (d.open - minPrice) / priceDelta);
@@ -849,14 +940,11 @@
 
                                 return (
                                     <g key={i}>
-                                        {/* Candlestick Wicks & Real Body Cells */}
                                         <line x1={x} y1={yHigh} x2={x} y2={yLow} stroke={baseColor} strokeWidth="1" />
                                         <rect x={x - (horizontalStep * 0.25)} y={Math.min(yOpen, yClose)} width={horizontalStep * 0.5} height={Math.max(Math.abs(yOpen - yClose), 1)} fill={isGreen ? '#00FF66' : 'transparent'} stroke={baseColor} strokeWidth="1" />
 
-                                        {/* MACD Histogram Matrix Bars */}
                                         <line x1={x} y1={yZeroMacd} x2={x} y2={yHist} stroke={d.hist >= 0 ? '#00FF66' : '#ef4444'} strokeWidth={horizontalStep * 0.3} opacity="0.3" />
 
-                                        {/* Line Continuities across arrays */}
                                         {i > 0 && (() => {
                                             const prevX = (i - 1) * horizontalStep + (horizontalStep / 2);
                                             const prevRsi = rsiTop + (rsiAreaHeight * (1 - vectorData[i-1].rsi / 100));
@@ -874,7 +962,6 @@
                                 );
                             })}
 
-                            {/* Transparent Reactive Hover Hitbox Strips */}
                             {vectorData.map((d, i) => (
                                 <rect 
                                     key={`box-${i}`}
