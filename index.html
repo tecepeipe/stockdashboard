@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRADING TERMINAL // PRO</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            transition: background-color 0.2s ease;
+        }
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #09090b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #27272a;
+            border-radius: 2px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #00FF66;
+        }
+    </style>
+</head>
+<body class="selection:bg-[#00FF66] selection:text-black antialiased">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const Icons = {
+            TrendingUp: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>,
+            TrendingDown: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline><polyline points="16 17 22 17 22 11"></polyline></svg>,
+            Search: () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>,
+            Plus: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>,
+            Trash: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>,
+            Maximize: () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path></svg>,
+            Minimize: () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"></path></svg>,
+            Key: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>,
+            Sun: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"></circle><line x1="12" y1="2" x2="12" y2="4"></line><line x1="12" y1="20" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="6.34" y2="6.34"></line><line x1="17.66" y1="17.66" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="4" y2="12"></line><line x1="20" y1="12" x2="22" y2="12"></line><line x1="6.34" y1="17.66" x2="4.93" y2="19.07"></line><line x1="19.07" y1="6.34" x2="17.66" y2="4.93"></line></svg>,
+            Moon: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>,
+            Eye: () => <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        };
+
+        const TICKER_DICTIONARY = [
+            { ticker: 'AAPL', name: 'Apple Inc.', exchange: 'NASDAQ', cap: '2.89T', pe: '28.4' },
+            { ticker: 'MSFT', name: 'Microsoft Corporation', exchange: 'NASDAQ', cap: '3.12T', pe: '35.1' },
+            { ticker: 'TSLA', name: 'Tesla Inc.', exchange: 'NASDAQ', cap: '615.4B', pe: '42.8' },
+            { ticker: 'NVDA', name: 'NVIDIA Corporation', exchange: 'NASDAQ', cap: '2.18T', pe: '68.2' },
+            { ticker: 'AMD', name: 'Advanced Micro Devices', exchange: 'NASDAQ', cap: '270.5B', pe: '56.3' },
+            { ticker: 'AMZN', name: 'Amazon.com Inc.', exchange: 'NASDAQ', cap: '1.84T', pe: '40.9' },
+            { ticker: 'GOOGL', name: 'Alphabet Inc.', exchange: 'NASDAQ', cap: '1.76T', pe: '25.3' },
+            { ticker: 'META', name: 'Meta Platforms, Inc.', exchange: 'NASDAQ', cap: '1.24T', pe: '24.1' },
+            { ticker: 'NFLX', name: 'Netflix Inc.', exchange: 'NASDAQ', cap: '265.1B', pe: '37.5' },
+            { ticker: 'INTC', name: 'Intel Corporation', exchange: 'NASDAQ', cap: '142.3B', pe: '18.7' },
+            { ticker: 'QCOM', name: 'Qualcomm Inc.', exchange: 'NASDAQ', cap: '188.4B', pe: '22.1' },
+            { ticker: 'SBUX', name: 'Starbucks Corporation', exchange: 'NASDAQ', cap: '104.2B', pe: '21.4' },
+            { ticker: 'JPM', name: 'JPMorgan Chase & Co.', exchange: 'NYSE', cap: '562.1B', pe: '11.8' },
+            { ticker: 'V', name: 'Visa Inc.', exchange: 'NYSE', cap: '540.3B', pe: '32.1' },
+            { ticker: 'DIS', name: 'The Walt Disney Company', exchange: 'NYSE', cap: '212.4B', pe: '64.3' },
+            { ticker: 'KO', name: 'The Coca-Cola Company', exchange: 'NYSE', cap: '268.2B', pe: '24.8' },
+            { ticker: 'WMT', name: 'Walmart Inc.', exchange: 'NYSE', cap: '482.1B', pe: '26.4' },
+            { ticker: 'XOM', name: 'Exxon Mobil Corporation', exchange: 'NYSE', cap: '468.5B', pe: '12.3' },
+            { ticker: 'NKE', name: 'NIKE, Inc.', exchange: 'NYSE', cap: '148.3B', pe: '28.9' }
+        ];
+
+        const mockFinancialsData = {};
+
+        const generateFinancials = (ticker) => {
+            if (mockFinancialsData[ticker]) return mockFinancialsData[ticker];
+            const scale = Math.random() * 10 + 5;
+            mockFinancialsData[ticker] = {
+                annual: {
+                    performance: [
+                        { period: '2023', revenue: parseFloat((scale * 1.2).toFixed(1)), netIncome: parseFloat((scale * 0.2).toFixed(1)) },
+                        { period: '2024', revenue: parseFloat((scale * 1.4).toFixed(1)), netIncome: parseFloat((scale * 0.25).toFixed(1)) },
+                        { period: '2025', revenue: parseFloat((scale * 1.6).toFixed(1)), netIncome: parseFloat((scale * 0.3).toFixed(1)) }
+                    ],
+                    earnings: [
+                        { period: '2023', actual: parseFloat((scale*0.05).toFixed(2)), forecast: parseFloat((scale*0.04).toFixed(2)) },
+                        { period: '2024', actual: parseFloat((scale*0.06).toFixed(2)), forecast: parseFloat((scale*0.05).toFixed(2)) },
+                        { period: '2025', actual: parseFloat((scale*0.07).toFixed(2)), forecast: parseFloat((scale*0.06).toFixed(2)) }
+                    ]
+                },
+                quarter: {
+                    performance: [
+                        { period: 'Q1 25', revenue: parseFloat((scale * 0.35).toFixed(1)), netIncome: parseFloat((scale * 0.05).toFixed(1)) },
+                        { period: 'Q2 25', revenue: parseFloat((scale * 0.38).toFixed(1)), netIncome: parseFloat((scale * 0.06).toFixed(1)) },
+                        { period: 'Q3 25', revenue: parseFloat((scale * 0.42).toFixed(1)), netIncome: parseFloat((scale * 0.07).toFixed(1)) }
+                    ],
+                    earnings: [
+                        { period: 'Q1 25', actual: parseFloat((scale * 0.015).toFixed(2)), forecast: parseFloat((scale * 0.014).toFixed(2)) },
+                        { period: 'Q2 25', actual: parseFloat((scale * 0.018).toFixed(2)), forecast: parseFloat((scale * 0.017).toFixed(2)) },
+                        { period: 'Q3 25', actual: parseFloat((scale * 0.022).toFixed(2)), forecast: parseFloat((scale * 0.020).toFixed(2)) }
+                    ]
+                }
+            };
+            return mockFinancialsData[ticker];
+        };
+
+        const calculateTechnicalIndicators = (data) => {
+            const closes = data.map(d => d.close);
+            
+            const calcEMA = (periods, values) => {
+                const k = 2 / (periods + 1);
+                let ema = [values[0] || 0];
+                for (let i = 1; i < values.length; i++) {
+                    ema.push(values[i] * k + ema[i - 1] * (1 - k));
+                }
+                return ema;
+            };
+
+            // MACD (12, 26, 9)
+            const ema12 = calcEMA(12, closes);
+            const ema26 = calcEMA(26, closes);
+            const macdLine = ema12.map((val, idx) => val - ema26[idx]);
+            const signalLine = calcEMA(9, macdLine);
+
+            // RSI (14)
+            let rsi = new Array(closes.length).fill(50);
+            if (closes.length > 14) {
+                let gains = 0, losses = 0;
+                for (let i = 1; i <= 14; i++) {
+                    const diff = closes[i] - closes[i - 1];
+                    if (diff > 0) gains += diff; else losses -= diff;
+                }
+                let avgGain = gains / 14;
+                let avgLoss = losses / 14;
+                rsi[14] = avgLoss === 0 ? 100 : 100 - (100 / (1 + (avgGain / avgLoss)));
+
+                for (let i = 15; i < closes.length; i++) {
+                    const diff = closes[i] - closes[i - 1];
+                    avgGain = ((avgGain * 13) + (diff > 0 ? diff : 0)) / 14;
+                    avgLoss = ((avgLoss * 13) + (diff < 0 ? -diff : 0)) / 14;
+                    rsi[i] = avgLoss === 0 ? 100 : 100 - (100 / (1 + (avgGain / avgLoss)));
+                }
+            }
+
+            return data.map((d, i) => ({
+                ...d,
+                macd: parseFloat((macdLine[i] || 0).toFixed(3)),
+                signal: parseFloat((signalLine[i] || 0).toFixed(3)),
+                hist: parseFloat(((macdLine[i] || 0) - (signalLine[i] || 0)).toFixed(3)),
+                rsi: parseFloat(rsi[i].toFixed(2))
+            }));
+        };
+
+        const generateForcedFakeData = (ticker, timeframe) => {
+            let dataPoints = timeframe === '1D' ? 35 : timeframe === '1W' ? 45 : timeframe === '1M' ? 55 : 70;
+            let currentPrice = 10 + (Math.random() * 8); 
+            let data = [];
+            
+            for (let i = 0; i < dataPoints; i++) {
+                let step = (Math.random() - 0.5) * 0.8;
+                let open = currentPrice;
+                let close = currentPrice + step;
+                
+                if (close < 10.5) close = 10.5 + Math.random() * 0.5;
+                if (close > 19.5) close = 19.5 - Math.random() * 0.5;
+                
+                let high = Math.max(open, close) + (Math.random() * 0.3);
+                let low = Math.min(open, close) - (Math.random() * 0.3);
+                
+                data.push({
+                    time: `${dataPoints - i}d ago`,
+                    open: parseFloat(open.toFixed(2)),
+                    close: parseFloat(close.toFixed(2)),
+                    high: parseFloat(high.toFixed(2)),
+                    low: parseFloat(low.toFixed(2)),
+                    volume: Math.floor(Math.random() * 500000) + 100000
+                });
+                currentPrice = close;
+            }
+            return calculateTechnicalIndicators(data);
+        };
+
+        // Custom Hook to Recognize Advanced Candlestick Pattern Vectors
+        const scanCandlestickPatterns = (data) => {
+            if (!data || data.length < 3) return [];
+            const segments = [];
+            let prevGrouped = false;
+
+            for (let i = 1; i < data.length; i++) {
+                const curr = data[i];
+                const prev = data[i - 1];
+                
+                const currBody = Math.abs(curr.close - curr.open);
+                const currRange = curr.high - curr.low || 0.01;
+                const isCurrGreen = curr.close >= curr.open;
+                
+                const prevBody = Math.abs(prev.close - prev.open);
+                const isPrevGreen = prev.close >= prev.open;
+
+                // 1. Hammer Pattern (Bullish Reversal Opportunity)
+                const lowerWickHammer = isCurrGreen ? (curr.open - curr.low) : (curr.close - curr.low);
+                const upperWickHammer = isCurrGreen ? (curr.high - curr.close) : (curr.high - curr.open);
+                if (lowerWickHammer > (currBody * 1.8) && upperWickHammer < (currBody * 0.4) && currBody > 0) {
+                    segments.push({
+                        startIndex: i,
+                        endIndex: i,
+                        type: 'BULLISH',
+                        label: 'HAMMER'
+                    });
+                    continue;
+                }
+
+                // 2. Inverted Hammer / Shooting Star (Potential Bearish Pivot Peak)
+                if (upperWickHammer > (currBody * 1.8) && lowerWickHammer < (currBody * 0.4) && currBody > 0) {
+                    segments.push({
+                        startIndex: i,
+                        endIndex: i,
+                        type: 'BEARISH',
+                        label: 'SHOOTING STAR'
+                    });
+                    continue;
+                }
+
+                // 3. Engulfing Sequences (Requires multi-node grouping grid boundaries)
+                if (currBody > prevBody * 1.3 && prevBody > 0) {
+                    if (!prevGrouped && isCurrGreen && !isPrevGreen && curr.close >= prev.open && curr.open <= prev.close) {
+                        segments.push({
+                            startIndex: i - 1,
+                            endIndex: i,
+                            type: 'BULLISH',
+                            label: 'BULLISH ENGULFING'
+                        });
+                        prevGrouped = true;
+                        continue;
+                    }
+                    if (!prevGrouped && !isCurrGreen && isPrevGreen && curr.close <= prev.open && curr.open >= prev.close) {
+                        segments.push({
+                            startIndex: i - 1,
+                            endIndex: i,
+                            type: 'BEARISH',
+                            label: 'BEARISH ENGULFING'
+                        });
+                        prevGrouped = true;
+                        continue;
+                    }
+                }
+
+                // 4. Marubozu Breakout Engine
+                if (currBody / currRange > 0.90 && currBody > 0.3) {
+                    segments.push({
+                        startIndex: i,
+                        endIndex: i,
+                        type: isCurrGreen ? 'BULLISH' : 'BEARISH',
+                        label: isCurrGreen ? 'BULLISH MARUBOZU' : 'BEARISH MARUBOZU'
+                    });
+                }
+                prevGrouped = false;
+            }
+            return segments;
+        };
+
+        function Dashboard() {
+            const [theme, setTheme] = React.useState(() => localStorage.getItem('matrix_theme') || 'dark');
+            const [watchlist, setWatchlist] = React.useState(() => {
+                const saved = localStorage.getItem('matrix_watchlist_v2');
+                return saved ? JSON.parse(saved) : ['AAPL', 'MSFT', 'TSLA', 'NVDA'];
+            });
+            const [activeStock, setActiveStock] = React.useState('AAPL');
+            const [timeframe, setTimeframe] = React.useState('1D');
+            const [apiKey, setApiKey] = React.useState(() => localStorage.getItem('matrix_twelvedata_key') || '');
+            const [showApiInput, setShowApiInput] = React.useState(false);
+            const [isMaximized, setIsMaximized] = React.useState(false);
+            const [searchQuery, setSearchQuery] = React.useState('');
+            const [suggestions, setSuggestions] = React.useState([]);
+            const [financialView, setFinancialView] = React.useState('annual');
+            const [syncProgress, setSyncProgress] = React.useState(100);
+            const [syncStatusText, setSyncStatusText] = React.useState('SYSTEM_READY');
+            const [marketTelemetry, setMarketTelemetry] = React.useState({ isOpen: true, text: 'CALCULATING WINDOWS...' });
+            
+            // Toggle config variable state for displaying candlestick indicators
+            const [showPatterns, setShowPatterns] = React.useState(false);
+
+            const [stockPrices, setStockPrices] = React.useState({});
+            const [renderedChartData, setRenderedChartData] = React.useState([]);
+
+            React.useEffect(() => {
+                const trackHours = () => {
+                    const fmt = new Intl.DateTimeFormat('en-US', {
+                        timeZone: 'America/New_York', year: 'numeric', month: 'numeric', day: 'numeric',
+                        hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: false
+                    });
+                    const parts = fmt.formatToParts(new Date());
+                    const m = Object.fromEntries(parts.map(p => [p.type, p.value]));
+                    const ny = new Date(parseInt(m.year), parseInt(m.month) - 1, parseInt(m.day), parseInt(m.hour), parseInt(m.minute));
+                    const day = ny.getDay();
+                    const mins = ny.getHours() * 60 + ny.getMinutes();
+                    if (day === 0 || day === 6) {
+                        setMarketTelemetry({ isOpen: false, text: 'CLOSED // WEEKEND_BREAK' });
+                    } else if (mins >= 570 && mins < 960) {
+                        setMarketTelemetry({ isOpen: true, text: `OPEN // SYSTEM_ACTIVE` });
+                    } else {
+                        setMarketTelemetry({ isOpen: false, text: 'CLOSED // CORES_SLEEPING' });
+                    }
+                };
+                trackHours();
+                const timer = setInterval(trackHours, 20000);
+                return () => clearInterval(timer);
+            }, []);
+
+            React.useEffect(() => {
+                localStorage.setItem('matrix_theme', theme);
+                document.body.style.backgroundColor = theme === 'dark' ? '#050505' : '#f8f9fa';
+            }, [theme]);
+
+            React.useEffect(() => {
+                localStorage.setItem('matrix_watchlist_v2', JSON.stringify(watchlist));
+            }, [watchlist]);
+
+            const fetchPipelineData = React.useCallback(async () => {
+                setSyncProgress(10);
+                setSyncStatusText('SCANNING CHANNELS...');
+                
+                const intervalMap = { '1D': '5min', '1W': '15min', '1M': '30min', '1Y': '1day' };
+                const selectedInterval = intervalMap[timeframe] || '1day';
+                const localPrices = { ...stockPrices };
+
+                let allCached = true;
+                for (let ticker of watchlist) {
+                    const cacheKey = `cache_${ticker}_${timeframe}_${apiKey ? 'live' : 'fake'}`;
+                    const cachedString = localStorage.getItem(cacheKey);
+                    if (cachedString) {
+                        const parsedCache = JSON.parse(cachedString);
+                        const cacheValidityDuration = apiKey ? 5 * 60 * 1000 : 10 * 60 * 1000;
+                        if (Date.now() - parsedCache.timestamp > cacheValidityDuration) {
+                            allCached = false;
+                        }
+                    } else {
+                        allCached = false;
+                    }
+                }
+
+                if (!apiKey) {
+                    for (let ticker of watchlist) {
+                        const cacheKey = `cache_${ticker}_${timeframe}_fake`;
+                        let processedData = generateForcedFakeData(ticker, timeframe);
+                        localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: processedData }));
+                        
+                        const currentCandle = processedData[processedData.length - 1];
+                        const staticMeta = TICKER_DICTIONARY.find(i => i.ticker === ticker) || { cap: '150B', pe: '22.0' };
+                        
+                        localPrices[ticker] = {
+                            price: currentCandle.close,
+                            change: ((currentCandle.close - processedData[0].close) / processedData[0].close) * 100,
+                            volume: '1.2M',
+                            cap: staticMeta.cap,
+                            pe: staticMeta.pe
+                        };
+                        if (ticker === activeStock) setRenderedChartData(processedData);
+                    }
+                    setStockPrices(localPrices);
+                    setSyncProgress(100);
+                    setSyncStatusText('SIMULATION MODE BUFFERED');
+                    return;
+                }
+
+                if (!allCached) {
+                    try {
+                        setSyncProgress(40);
+                        const symbolsParam = watchlist.join(',');
+                        const url = `https://api.twelvedata.com/time_series?symbol=${symbolsParam}&interval=${selectedInterval}&outputsize=60&apikey=${apiKey}`;
+                        
+                        const res = await fetch(url);
+                        const resJson = await res.json();
+
+                        if (resJson.status === 'error') throw new Error(resJson.message);
+
+                        for (let ticker of watchlist) {
+                            const tickerData = watchlist.length === 1 ? resJson : resJson[ticker];
+                            
+                            if (tickerData && tickerData.values) {
+                                const processedData = calculateTechnicalIndicators(tickerData.values.map(v => ({
+                                    time: v.datetime,
+                                    open: parseFloat(v.open),
+                                    high: parseFloat(v.high),
+                                    low: parseFloat(v.low),
+                                    close: parseFloat(v.close),
+                                    volume: parseInt(v.volume || 0)
+                                })).reverse());
+
+                                const cacheKey = `cache_${ticker}_${timeframe}_live`;
+                                localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: processedData }));
+                            }
+                        }
+                    } catch (e) {
+                        console.error("TwelveData Stream Exception Encountered:", e.message);
+                        setSyncStatusText(`API ERROR: ${e.message.slice(0, 20)}...`);
+                    }
+                }
+
+                for (let ticker of watchlist) {
+                    const cacheKey = `cache_${ticker}_${timeframe}_${apiKey ? 'live' : 'fake'}`;
+                    const cachedString = localStorage.getItem(cacheKey);
+                    
+                    if (cachedString) {
+                        const { data } = JSON.parse(cachedString);
+                        if (data && data.length > 0) {
+                            const currentCandle = data[data.length - 1];
+                            const initialCandle = data[0];
+                            const deltaPercentage = ((currentCandle.close - initialCandle.close) / initialCandle.close) * 100;
+                            const staticMeta = TICKER_DICTIONARY.find(i => i.ticker === ticker) || { cap: '180B', pe: '25.0' };
+
+                            localPrices[ticker] = {
+                                price: currentCandle.close,
+                                change: deltaPercentage,
+                                volume: currentCandle.volume > 1e6 ? (currentCandle.volume/1e6).toFixed(1) + 'M' : currentCandle.volume.toLocaleString(),
+                                cap: staticMeta.cap,
+                                pe: staticMeta.pe
+                            };
+
+                            if (ticker === activeStock) {
+                                setRenderedChartData(data);
+                            }
+                        }
+                    }
+                }
+
+                setStockPrices(localPrices);
+                setSyncProgress(100);
+                if (apiKey) setSyncStatusText('LIVE VECTOR FEED ACTIVE');
+            }, [watchlist, timeframe, apiKey, activeStock]);
+
+            React.useEffect(() => {
+                fetchPipelineData();
+            }, [activeStock, timeframe, apiKey, watchlist]);
+
+            const executeSearchEngine = (e) => {
+                const text = e.target.value;
+                setSearchQuery(text);
+                if (!text.trim()) {
+                    setSuggestions([]);
+                    return;
+                }
+                const match = TICKER_DICTIONARY.filter(item => 
+                    item.ticker.toLowerCase().includes(text.toLowerCase()) || 
+                    item.name.toLowerCase().includes(text.toLowerCase())
+                );
+                setSuggestions(match);
+            };
+
+            const selectEngineNode = (node) => {
+                if (!watchlist.includes(node.ticker)) {
+                    setWatchlist([...watchlist, node.ticker]);
+                }
+                setActiveStock(node.ticker);
+                setSearchQuery('');
+                setSuggestions([]);
+            };
+
+            const activeCompanyMeta = TICKER_DICTIONARY.find(i => i.ticker === activeStock) || { name: `${activeStock} Co.`, exchange: 'NAS', cap: 'N/A', pe: 'N/A' };
+
+            // Calculate derived minimum and maximum threshold levels for display values
+            const windowHigh = renderedChartData.length > 0 ? Math.max(...renderedChartData.map(d => d.high)) : 0;
+            const windowLow = renderedChartData.length > 0 ? Math.min(...renderedChartData.map(d => d.low)) : 0;
+
+            return (
+                <div class={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${theme === 'dark' ? 'bg-[#050505] text-zinc-400' : 'bg-[#f8f9fa] text-zinc-600'}`}>
+                    
+                    <div class="h-[2px] w-full bg-zinc-950 relative z-50">
+                        <div class={`h-full transition-all duration-300 ${apiKey ? 'bg-[#00FF66]' : 'bg-blue-500'}`} style={{ width: `${syncProgress}%` }}></div>
+                    </div>
+
+                    <header class={`border-b px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-40 backdrop-blur-md ${theme === 'dark' ? 'border-zinc-900 bg-zinc-950/80' : 'border-zinc-200 bg-white/80'}`}>
+                        <div class="flex items-center space-x-4">
+                            <div class="bg-[#00FF66]/10 text-[#00FF66] px-3 py-1 text-[10px] font-mono font-bold tracking-widest rounded-sm border border-[#00FF66]/30">
+                                QUANT_CORE // ENGINE
+                            </div>
+                            <h1 class={`text-sm font-bold tracking-wider font-mono uppercase ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
+                                Terminal // <span class="text-zinc-500 font-normal">DataStream Alpha</span>
+                            </h1>
+                        </div>
+
+                        <div class="flex items-center space-x-3">
+                            <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} class={`min-h-[38px] px-3 rounded-md font-mono text-xs font-bold flex items-center space-x-2 border transition-all cursor-pointer ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700' : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50'}`}>
+                                {theme === 'dark' ? <Icons.Sun /> : <Icons.Moon />}
+                            </button>
+
+                            <button onClick={() => setShowApiInput(!showApiInput)} class={`min-h-[38px] px-3 rounded-md border text-xs flex items-center space-x-2 font-mono transition-all cursor-pointer ${apiKey ? 'border-[#00FF66]/40 text-[#00FF66]' : 'border-zinc-700 text-zinc-500'}`}>
+                                <Icons.Key />
+                                <span class="hidden sm:inline font-bold">{apiKey ? 'LIVE CONNECTOR' : 'TWELVEDATA API'}</span>
+                            </button>
+                        </div>
+                    </header>
+
+                    <div class={`px-6 py-2 border-b text-[10px] font-mono flex items-center justify-between tracking-wider ${apiKey ? 'bg-emerald-900/10 text-emerald-500 border-emerald-950' : 'bg-zinc-900/40 text-zinc-500 border-zinc-900'}`}>
+                        <div class="flex items-center space-x-2">
+                            <span class="animate-pulse">●</span>
+                            <span>{syncStatusText} // {marketTelemetry.text}</span>
+                        </div>
+                        <div>TIMELINE TRACKER ACTIVE</div>
+                    </div>
+
+                    {showApiInput && (
+                        <div class={`border-b p-6 ${theme === 'dark' ? 'bg-zinc-950 border-zinc-900' : 'bg-white border-zinc-200'}`}>
+                            <div class="max-w-xl mx-auto space-y-2">
+                                <h3 class="text-xs font-mono font-bold uppercase tracking-wider text-zinc-400">TwelveData Production API Socket</h3>
+                                <div class="flex gap-2">
+                                    <input type="password" placeholder="ENTER TWELVEDATA API VALUE..." id="api_input_field" defaultValue={apiKey} class="flex-1 bg-zinc-900 border border-zinc-800 text-[#00FF66] placeholder-zinc-600 rounded-md px-3 text-xs font-mono h-10 focus:outline-hidden" />
+                                    <button onClick={() => {
+                                        const keyVal = document.getElementById('api_input_field').value.trim();
+                                        setApiKey(keyVal);
+                                        localStorage.setItem('matrix_twelvedata_key', keyVal);
+                                        setShowApiInput(false);
+                                        localStorage.clear();
+                                    }} class="bg-[#00FF66] text-black px-4 text-xs font-mono font-bold rounded-md h-10 cursor-pointer">CONNECT</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-0 relative">
+                        
+                        <aside class={`lg:col-span-3 border-r flex flex-col ${theme === 'dark' ? 'border-zinc-900 bg-[#070708]' : 'border-zinc-200 bg-zinc-50'}`}>
+                            <div class="p-4 border-b border-zinc-900">
+                                <div class="relative">
+                                    <input type="text" value={searchQuery} onChange={executeSearchEngine} placeholder="SCAN CORE EXCHANGE INDEX..." class="w-full bg-zinc-900 border border-zinc-800 text-white placeholder-zinc-600 rounded-md pl-10 pr-4 py-2 text-xs font-mono uppercase focus:outline-hidden" />
+                                    <span class="absolute left-3 top-2.5 text-zinc-600"><Icons.Search /></span>
+                                </div>
+
+                                {suggestions.length > 0 && (
+                                    <div class="absolute left-4 right-4 mt-1 bg-zinc-950 border border-zinc-800 rounded-md shadow-2xl divide-y divide-zinc-900 z-50">
+                                        {suggestions.map(s => (
+                                            <div key={s.ticker} onClick={() => selectEngineNode(s)} class="p-3 flex justify-between items-center hover:bg-zinc-900 cursor-pointer text-xs font-mono">
+                                                <span class="text-white font-bold">{s.ticker} <span class="text-[9px] text-zinc-600">({s.exchange})</span></span>
+                                                <span class="text-zinc-500 truncate max-w-[150px]">{s.name}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div class="p-3 bg-zinc-950/40 text-[9px] font-mono tracking-widest text-zinc-500 uppercase border-b border-zinc-900">Watchlist Matrix Grid</div>
+                            
+                            <div class="flex-1 overflow-y-auto divide-y divide-zinc-900">
+                                {watchlist.map(ticker => {
+                                    const details = stockPrices[ticker] || { price: 0.00, change: 0.00, volume: 'N/A' };
+                                    const isUp = details.change >= 0;
+                                    const isSelected = activeStock === ticker;
+                                    const dictRef = TICKER_DICTIONARY.find(i => i.ticker === ticker);
+
+                                    return (
+                                        <div key={ticker} onClick={() => setActiveStock(ticker)} class={`p-4 flex items-center justify-between cursor-pointer transition-all ${isSelected ? 'bg-zinc-900/60 border-l-2 border-[#00FF66]' : 'hover:bg-zinc-900/20'}`}>
+                                            <div>
+                                                <div class="flex items-center space-x-2 font-mono">
+                                                    <span class={`text-sm font-bold ${isSelected ? 'text-[#00FF66]' : 'text-zinc-300'}`}>{ticker}</span>
+                                                    <span class="text-[8px] px-1 bg-zinc-900 border border-zinc-800 text-zinc-600 rounded-sm">{dictRef ? dictRef.exchange : 'NAS'}</span>
+                                                </div>
+                                                <div class="text-[10px] text-zinc-600 font-mono">V: {details.volume}</div>
+                                            </div>
+                                            <div class="flex items-center space-x-3 font-mono text-right">
+                                                <div>
+                                                    <div class="text-xs font-bold text-zinc-200">${details.price.toFixed(2)}</div>
+                                                    <div class={`text-[9px] font-bold flex items-center justify-end ${isUp ? 'text-[#00FF66]' : 'text-red-500'}`}>
+                                                        {isUp ? '+' : ''}{details.change.toFixed(2)}%
+                                                    </div>
+                                                </div>
+                                                <button onClick={(e) => { e.stopPropagation(); setWatchlist(watchlist.filter(w => w !== ticker)); }} class="text-zinc-700 hover:text-red-500"><Icons.Trash /></button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </aside>
+
+                        <main class={`lg:col-span-6 flex flex-col overflow-hidden transition-all duration-300 ${isMaximized ? 'fixed inset-0 z-50 bg-[#050505] p-6' : ''} ${theme === 'dark' ? 'border-zinc-900 bg-zinc-950/20' : 'border-zinc-200 bg-white'}`}>
+                            <div class="px-6 py-3 border-b border-zinc-900 flex flex-wrap items-center justify-between bg-zinc-950/40 gap-y-2 relative z-10">
+                                <div class="flex items-center space-x-4">
+                                    <span class="text-[10px] font-mono font-bold text-zinc-600 tracking-wider">TIMEFRAME</span>
+                                    <div class="flex bg-zinc-950 p-0.5 rounded-sm border border-zinc-900">
+                                        {['1D', '1W', '1M', '1Y'].map(t => (
+                                            <button key={t} onClick={() => setTimeframe(t)} class={`px-2 py-1 text-[9px] font-mono font-bold transition-all rounded-xs cursor-pointer ${timeframe === t ? 'bg-[#00FF66] text-black' : 'text-zinc-600 hover:text-zinc-400'}`}>{t}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                                
+                                <div class="flex items-center space-x-4">
+                                    {/* Config toggle switch button configuration */}
+                                    <button 
+                                        onClick={() => setShowPatterns(!showPatterns)} 
+                                        class={`px-3 py-1 text-[9px] font-mono font-bold border rounded-xs transition-all flex items-center space-x-1.5 cursor-pointer ${showPatterns ? 'bg-emerald-900/20 border-[#00FF66] text-[#00FF66]' : 'bg-zinc-900/40 border-zinc-800 text-zinc-500'}`}
+                                    >
+                                        <Icons.Eye />
+                                        <span>CANDLESTICK PATTERNS: {showPatterns ? 'ON' : 'OFF'}</span>
+                                    </button>
+
+                                    <button onClick={() => setIsMaximized(!isMaximized)} class="text-zinc-600 hover:text-zinc-400 cursor-pointer">
+                                        {isMaximized ? <Icons.Minimize /> : <Icons.Maximize />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="flex-1 p-6 flex flex-col justify-between overflow-hidden relative z-10">
+                                <div class="flex items-center justify-between border-b border-zinc-900 pb-4">
+                                    <h2 class="text-xl font-bold font-mono tracking-wider text-white">
+                                        {activeStock}
+                                        <span class="text-xs text-zinc-600 font-normal ml-2">// {activeCompanyMeta.name}</span>
+                                    </h2>
+                                    <div class="text-xl font-bold font-mono text-[#00FF66] bg-[#00FF66]/5 border border-[#00FF66]/20 px-3 py-1 rounded-sm">
+                                        ${stockPrices[activeStock] ? stockPrices[activeStock].price.toFixed(2) : '0.00'}
+                                    </div>
+                                </div>
+
+                                <div class="flex-1 w-full relative pt-4 overflow-hidden">
+                                    <CandlestickChart vectorData={renderedChartData} theme={theme} showPatterns={showPatterns} />
+                                </div>
+                            </div>
+                        </main>
+
+                        <aside class="lg:col-span-3 flex flex-col overflow-y-auto bg-[#070708] divide-y divide-zinc-900">
+                            <div class="p-6 space-y-4">
+                                <h3 class="text-[10px] font-mono font-bold text-zinc-600 tracking-widest uppercase">QUANTITATIVE DATA MATRIX</h3>
+                                <div class="grid grid-cols-2 gap-3">
+                                    {[
+                                        { label: 'MARKET CAP', value: stockPrices[activeStock] ? stockPrices[activeStock].cap : activeCompanyMeta.cap },
+                                        { label: 'P/E RATIO', value: stockPrices[activeStock] ? stockPrices[activeStock].pe : activeCompanyMeta.pe },
+                                        { label: `WINDOW LOW (${timeframe})`, value: windowLow ? `$${windowLow.toFixed(2)}` : 'N/A' },
+                                        { label: `WINDOW HIGH (${timeframe})`, value: windowHigh ? `$${windowHigh.toFixed(2)}` : 'N/A' }
+                                    ].map((m, idx) => (
+                                        <div key={idx} class="bg-[#0b0b0c] border border-zinc-900 rounded-sm p-3 font-mono">
+                                            <div class="text-[8px] text-zinc-600 tracking-widest uppercase">{m.label}</div>
+                                            <div class="text-xs font-bold text-zinc-300 mt-1">{m.value}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div class="p-6 space-y-4 flex-1 flex flex-col">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-[10px] font-mono font-bold text-zinc-600 tracking-widest uppercase">FINANCIAL STATEMENTS</h3>
+                                    <div class="flex bg-zinc-950 border border-zinc-900 p-0.5 rounded-sm">
+                                        {['annual', 'quarter'].map(mode => (
+                                            <button key={mode} onClick={() => setFinancialView(mode)} class={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-xs uppercase cursor-pointer ${financialView === mode ? 'bg-[#00FF66] text-black' : 'text-zinc-600'}`}>{mode.slice(0, 4)}</button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div class="space-y-4 flex-1 justify-around pt-2">
+                                    <div>
+                                        <div class="text-[9px] font-mono text-zinc-600 mb-2 tracking-wider uppercase">Performance Metrics (REV vs NET)</div>
+                                        <div class="space-y-2">
+                                            {generateFinancials(activeStock)[financialView]?.performance.map((item, i) => {
+                                                const maxRev = Math.max(...generateFinancials(activeStock)[financialView].performance.map(p => p.revenue));
+                                                return (
+                                                    <div key={i} class="font-mono text-[10px] space-y-1">
+                                                        <div class="text-zinc-600">{item.period}</div>
+                                                        <div class="w-full bg-zinc-900 h-1.5 rounded-xs overflow-hidden relative">
+                                                            <div class="bg-blue-600 h-full absolute top-0 left-0" style={{ width: `${(item.revenue/maxRev)*100}%` }}></div>
+                                                        </div>
+                                                        <div class="w-full bg-zinc-900 h-1 rounded-xs overflow-hidden relative">
+                                                            <div class="bg-[#00FF66] h-full absolute top-0 left-0" style={{ width: `${(item.netIncome/maxRev)*100}%` }}></div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <div class="text-[9px] font-mono text-zinc-600 mb-2 tracking-wider uppercase">EPS Forecast Vectors</div>
+                                        <div class="space-y-2">
+                                            {generateFinancials(activeStock)[financialView]?.earnings.map((item, i) => (
+                                                <div key={i} class="font-mono text-[10px] flex justify-between items-center bg-zinc-950 p-2 border border-zinc-900 rounded-sm">
+                                                    <span class="text-zinc-500 font-bold">{item.period}</span>
+                                                    <span class="text-zinc-400">ACT: <strong class="text-amber-500">${item.actual}</strong></span>
+                                                    <span class="text-zinc-600">EST: ${item.forecast}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </aside>
+
+                    </div>
+                </div>
+            );
+        }
+
+        // Expanded Chart Module
+        function CandlestickChart({ vectorData, theme, showPatterns }) {
+            const [hoverNode, setHoverNode] = React.useState(null);
+
+            if (!vectorData || vectorData.length === 0) {
+                return <div class="h-full flex items-center justify-center font-mono text-xs text-zinc-700 animate-pulse">CONNECTING INTERFACE PIPELINES...</div>;
+            }
+
+            const highLowPrices = vectorData.map(d => [d.high, d.low]).flat();
+            const maxPrice = Math.max(...highLowPrices) * 1.01;
+            const minPrice = Math.min(...highLowPrices) * 0.99;
+            const priceDelta = maxPrice - minPrice || 1;
+
+            const macdIndicators = vectorData.map(d => [d.macd, d.signal, d.hist]).flat();
+            const maxMacd = Math.max(...macdIndicators, 0.02);
+            const minMacd = Math.min(...macdIndicators, -0.02);
+            const macdDelta = maxMacd - minMacd || 1;
+
+            const widthDimension = 700;
+            const heightDimension = 450;
+            
+            const candleAreaHeight = heightDimension * 0.50;
+            const rsiAreaHeight = heightDimension * 0.16;
+            const macdAreaHeight = heightDimension * 0.18;
+
+            const rsiTop = candleAreaHeight + 20;
+            const macdTop = rsiTop + rsiAreaHeight + 20;
+            const horizontalStep = widthDimension / vectorData.length;
+
+            // Generate patterns array data if enabled by configuration switch
+            const identifiedPatterns = showPatterns ? scanCandlestickPatterns(vectorData) : [];
+
+            return (
+                <div class="w-full h-full flex flex-col justify-between">
+                    <div class="mb-3 p-2 bg-zinc-950 border border-zinc-900 rounded-sm font-mono text-[10px] flex flex-wrap gap-x-4 gap-y-1 text-zinc-500">
+                        <span class="text-[#00FF66] font-bold">STREAM LOGS //</span>
+                        {hoverNode ? (
+                            <>
+                                <span>T: <strong class="text-white">{hoverNode.time}</strong></span>
+                                <span>O: <strong class="text-zinc-400">${hoverNode.open.toFixed(2)}</strong></span>
+                                <span>H: <strong class="text-[#00FF66]">${hoverNode.high.toFixed(2)}</strong></span>
+                                <span>L: <strong class="text-red-500">${hoverNode.low.toFixed(2)}</strong></span>
+                                <span>C: <strong class="text-blue-400">${hoverNode.close.toFixed(2)}</strong></span>
+                                <span>RSI: <strong class="text-purple-400">{hoverNode.rsi}</strong></span>
+                                <span>MACD: <strong class="text-blue-500">{hoverNode.macd}</strong></span>
+                            </>
+                        ) : (
+                            <span class="italic text-zinc-600">HOVER INTERACTIVE CROSSHAIR NODE ON CHART CELLS</span>
+                        )}
+                    </div>
+
+                    <div class="flex-1 relative overflow-hidden">
+                        <svg width="100%" height="100%" viewBox={`0 0 ${widthDimension} ${heightDimension}`} preserveAspectRatio="none" class="overflow-visible">
+                            
+                            {/* Area Dividers */}
+                            <line x1={0} y1={candleAreaHeight} x2={widthDimension} y2={candleAreaHeight} stroke="#1f1f23" strokeWidth="1" />
+                            <line x1={0} y1={rsiTop} x2={widthDimension} y2={rsiTop} stroke="#1f1f23" strokeWidth="1" />
+                            <line x1={0} y1={rsiTop + rsiAreaHeight} x2={widthDimension} y2={rsiTop + rsiAreaHeight} stroke="#1f1f23" strokeWidth="1" />
+                            <line x1={0} y1={macdTop} x2={widthDimension} y2={macdTop} stroke="#1f1f23" strokeWidth="1" />
+
+                            {/* Candle Grid Lines */}
+                            {Array.from({ length: 4 }).map((_, idx) => {
+                                const calculatedPrice = minPrice + (priceDelta * (idx / 3));
+                                const yPos = candleAreaHeight * (1 - (calculatedPrice - minPrice) / priceDelta);
+                                return (
+                                    <g key={`p-grid-${idx}`}>
+                                        <line x1={0} y1={yPos} x2={widthDimension} y2={yPos} stroke="rgba(255,255,255,0.03)" strokeDasharray="2,4" />
+                                        <text x={widthDimension - 5} y={yPos - 4} textAnchor="end" fill="#4b5563" fontSize="8" fontFamily="monospace">
+                                            ${calculatedPrice.toFixed(2)}
+                                        </text>
+                                    </g>
+                                );
+                            })}
+
+                            {/* RSI Grid Tracks */}
+                            {[30, 50, 70].map(val => {
+                                const yPos = rsiTop + (rsiAreaHeight * (1 - val / 100));
+                                return (
+                                    <g key={`rsi-${val}`}>
+                                        <line x1={0} y1={yPos} x2={widthDimension} y2={yPos} stroke={val === 50 ? "rgba(255,255,255,0.04)" : "rgba(168,85,247,0.15)"} strokeDasharray={val === 50 ? "2,2" : "4,4"} />
+                                        <text x={widthDimension - 5} y={yPos - 2} textAnchor="end" fill="#6b7280" fontSize="7" fontFamily="monospace">RSI {val}</text>
+                                    </g>
+                                );
+                            })}
+
+                            {/* Crosshair Tracker Line */}
+                            {hoverNode && (() => {
+                                const targetIdx = vectorData.indexOf(hoverNode);
+                                if (targetIdx !== -1) {
+                                    const centerX = targetIdx * horizontalStep + (horizontalStep / 2);
+                                    return <line x1={centerX} y1={0} x2={centerX} y2={heightDimension} stroke="rgba(0,255,102,0.15)" strokeWidth="1" strokeDasharray="2,2" />;
+                                }
+                            })()}
+
+                            {/* Rendered Pattern Highlights Clean Rectangles Without Label Interferences */}
+                            {identifiedPatterns.map((pat, idx) => {
+                                const pad = 3;
+                                const leftX = pat.startIndex * horizontalStep + pad;
+                                const rightX = (pat.endIndex + 1) * horizontalStep - pad;
+                                const width = rightX - leftX;
+                                
+                                // Find highest high and lowest low within group indices range
+                                const segmentData = vectorData.slice(pat.startIndex, pat.endIndex + 1);
+                                const segHighs = segmentData.map(d => d.high);
+                                const segLows = segmentData.map(d => d.low);
+                                
+                                const topY = candleAreaHeight * (1 - (Math.max(...segHighs) - minPrice) / priceDelta) - pad;
+                                const bottomY = candleAreaHeight * (1 - (Math.min(...segLows) - minPrice) / priceDelta) + pad;
+                                const height = bottomY - topY;
+
+                                const highlightColor = pat.type === 'BULLISH' ? '#00FF66' : '#ef4444';
+
+                                return (
+                                    <g key={`pat-${idx}`}>
+                                        <rect 
+                                            x={leftX} y={topY} width={width} height={height} 
+                                            fill="transparent" stroke={highlightColor} 
+                                            strokeWidth="1.5" strokeDasharray="3,3" rx="2" 
+                                        />
+                                    </g>
+                                );
+                            })}
+
+                            {/* Floating Chart Pattern Dashboard Legend Matrix */}
+                            {showPatterns && (
+                                <g transform={`translate(${widthDimension - 140}, 15)`}>
+                                    <rect x="0" y="0" width="130" height="36" fill="#09090b" stroke="#18181b" strokeWidth="1" rx="3" opacity="0.9"/>
+                                    
+                                    {/* Bullish Metric */}
+                                    <circle cx="12" cy="12" r="4" fill="#00FF66" />
+                                    <text x="24" y="15" fill="#a1a1aa" fontSize="8" fontFamily="monospace" fontWeight="bold">BULLISH REVERSAL</text>
+                                    
+                                    {/* Bearish Metric */}
+                                    <circle cx="12" cy="24" r="4" fill="#ef4444" />
+                                    <text x="24" y="27" fill="#a1a1aa" fontSize="8" fontFamily="monospace" fontWeight="bold">BEARISH REVERSAL</text>
+                                </g>
+                            )}
+
+                            {/* Rendering Vectors Data Maps */}
+                            {vectorData.map((d, i) => {
+                                const x = i * horizontalStep + (horizontalStep / 2);
+                                const yOpen = candleAreaHeight * (1 - (d.open - minPrice) / priceDelta);
+                                const yClose = candleAreaHeight * (1 - (d.close - minPrice) / priceDelta);
+                                const yHigh = candleAreaHeight * (1 - (d.high - minPrice) / priceDelta);
+                                const yLow = candleAreaHeight * (1 - (d.low - minPrice) / priceDelta);
+                                
+                                const isGreen = d.close >= d.open;
+                                const baseColor = isGreen ? '#00FF66' : '#ef4444';
+
+                                const yRsi = rsiTop + (rsiAreaHeight * (1 - d.rsi / 100));
+
+                                const yMacd = macdTop + (macdAreaHeight * (1 - (d.macd - minMacd) / macdDelta));
+                                const ySignal = macdTop + (macdAreaHeight * (1 - (d.signal - minMacd) / macdDelta));
+                                const yZeroMacd = macdTop + (macdAreaHeight * (1 - (0 - minMacd) / macdDelta));
+                                const yHist = macdTop + (macdAreaHeight * (1 - (d.hist - minMacd) / macdDelta));
+
+                                return (
+                                    <g key={i}>
+                                        {/* Candlestick Wicks & Real Body Cells */}
+                                        <line x1={x} y1={yHigh} x2={x} y2={yLow} stroke={baseColor} strokeWidth="1" />
+                                        <rect x={x - (horizontalStep * 0.25)} y={Math.min(yOpen, yClose)} width={horizontalStep * 0.5} height={Math.max(Math.abs(yOpen - yClose), 1)} fill={isGreen ? '#00FF66' : 'transparent'} stroke={baseColor} strokeWidth="1" />
+
+                                        {/* MACD Histogram Matrix Bars */}
+                                        <line x1={x} y1={yZeroMacd} x2={x} y2={yHist} stroke={d.hist >= 0 ? '#00FF66' : '#ef4444'} strokeWidth={horizontalStep * 0.3} opacity="0.3" />
+
+                                        {/* Line Continuities across arrays */}
+                                        {i > 0 && (() => {
+                                            const prevX = (i - 1) * horizontalStep + (horizontalStep / 2);
+                                            const prevRsi = rsiTop + (rsiAreaHeight * (1 - vectorData[i-1].rsi / 100));
+                                            const prevMacd = macdTop + (macdAreaHeight * (1 - (vectorData[i-1].macd - minMacd) / macdDelta));
+                                            const prevSignal = macdTop + (macdAreaHeight * (1 - (vectorData[i-1].signal - minMacd) / macdDelta));
+                                            return (
+                                                <g>
+                                                    <line x1={prevX} y1={prevRsi} x2={x} y2={yRsi} stroke="#a855f7" strokeWidth="1" opacity="0.8" />
+                                                    <line x1={prevX} y1={prevMacd} x2={x} y2={yMacd} stroke="#3b82f6" strokeWidth="1" />
+                                                    <line x1={prevX} y1={prevSignal} x2={x} y2={ySignal} stroke="#eab308" strokeWidth="0.8" strokeDasharray="1,1" />
+                                                </g>
+                                            );
+                                        })()}
+                                    </g>
+                                );
+                            })}
+
+                            {/* Transparent Reactive Hover Hitbox Strips */}
+                            {vectorData.map((d, i) => (
+                                <rect 
+                                    key={`box-${i}`}
+                                    x={i * horizontalStep} y={0} width={horizontalStep} height={heightDimension}
+                                    fill="transparent" class="cursor-crosshair pointer-events-auto"
+                                    onMouseEnter={() => setHoverNode(d)}
+                                    onMouseLeave={() => setHoverNode(null)}
+                                />
+                            ))}
+                        </svg>
+                    </div>
+                </div>
+            );
+        }
+
+        const appRoot = ReactDOM.createRoot(document.getElementById('root'));
+        appRoot.render(<Dashboard />);
+    </script>
+</body>
+</html>
