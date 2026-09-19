@@ -1033,6 +1033,7 @@
                 return values.length % 2 ? values[m] : (values[m-1] + values[m]) / 2;
             };
             const fmt = v => Number.isFinite(v) ? `${v >= 0 ? '+' : ''}${v.toFixed(2)}%` : '—';
+            const fmtRatio = v => Number.isFinite(v) && v > 0 ? `${v.toFixed(2)}x` : '—';
             const grouped = [...new Set(rows.map(r => r.label))].map(label => {
                 const items = completed.filter(r => r.label === label);
                 const sample = rows.filter(r => r.label === label).length;
@@ -1041,12 +1042,15 @@
             const panelClass = theme === 'dark' ? 'border-zinc-900 bg-zinc-950/70 text-zinc-300' : 'border-zinc-200 bg-white text-zinc-700';
             const mutedClass = theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500';
             const rowClass = theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200';
+            const detailRows = [...completed].reverse();
+
             return (
                 <div class={`mx-6 mb-4 p-4 border rounded-sm font-mono ${panelClass}`}>
                     <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
                         <div class={`text-[10px] font-bold tracking-wider ${mutedClass}`}>PATTERN LAB // HISTORICAL EVENT STUDY</div>
                         <div class={`text-[9px] ${mutedClass}`}>Forward returns from the pattern candle close</div>
                     </div>
+
                     <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-[10px] mb-4">
                         <div class={`border p-2 ${rowClass}`}>SIGNALS <strong>{rows.length}</strong></div>
                         <div class={`border p-2 ${rowClass}`}>COMPLETED <strong>{completed.length}</strong></div>
@@ -1054,6 +1058,7 @@
                         <div class={`border p-2 ${rowClass}`}>BEARISH <strong class="text-red-500">{completed.filter(r => r.type === 'BEARISH').length}</strong></div>
                         <div class={`border p-2 ${rowClass}`}>5-BAR AVG <strong>{fmt(avg(completed))}</strong></div>
                     </div>
+
                     <div class={`text-[9px] uppercase tracking-wider mb-2 ${mutedClass}`}>Pattern results</div>
                     <div class="overflow-x-auto">
                         <table class="w-full text-[9px] min-w-[620px]">
@@ -1075,13 +1080,60 @@
                             </tbody>
                         </table>
                     </div>
+
+                    <div class={`mt-5 pt-4 border-t ${rowClass}`}>
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <div class={`text-[9px] uppercase tracking-wider ${mutedClass}`}>Individual occurrences</div>
+                            <div class={`text-[8px] ${mutedClass}`}>Most recent first · completed 5-candle observations only</div>
+                        </div>
+                        <div class="overflow-x-auto max-h-72 overflow-y-auto">
+                            <table class="w-full text-[9px] min-w-[820px]">
+                                <thead class={theme === 'dark' ? 'bg-zinc-950' : 'bg-white'}>
+                                    <tr class={`border-b ${rowClass} ${mutedClass}`}>
+                                        <th class="text-left py-2 pr-3 sticky top-0">PATTERN</th>
+                                        <th class="text-left py-2 px-2 sticky top-0">TIME</th>
+                                        <th class="text-right py-2 px-2 sticky top-0">ENTRY</th>
+                                        <th class="text-right py-2 px-2 sticky top-0">RSI</th>
+                                        <th class="text-right py-2 px-2 sticky top-0">VOL</th>
+                                        <th class="text-right py-2 px-2 sticky top-0">+1 BAR</th>
+                                        <th class="text-right py-2 px-2 sticky top-0">+3 BAR</th>
+                                        <th class="text-right py-2 px-2 sticky top-0">+5 BAR</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {detailRows.length ? detailRows.map((r,i) => {
+                                        const one = r.returns?.[1];
+                                        const three = r.returns?.[3];
+                                        const five = r.returns?.[5];
+                                        const adjusted = v => r.type === 'BEARISH' && Number.isFinite(v) ? -v : v;
+                                        const returnClass = v => adjusted(v) > 0 ? 'text-[#00FF66]' : adjusted(v) < 0 ? 'text-red-500' : '';
+                                        return (
+                                            <tr key={`${r.label}-${r.endIndex}-${i}`} class={`border-b ${rowClass}`}>
+                                                <td class="py-2 pr-3 font-bold">
+                                                    <span class={r.type === 'BULLISH' ? 'text-[#00FF66]' : 'text-red-500'}>{r.label}</span>
+                                                </td>
+                                                <td class="px-2">{r.time}</td>
+                                                <td class="text-right px-2">NaN</td>
+                                                <td class="text-right px-2">{Number(r.rsi).toFixed(1)}</td>
+                                                <td class="text-right px-2">{fmtRatio(r.volumeRatio)}</td>
+                                                <td class={`text-right px-2 ${returnClass(one)}`}>{fmt(adjusted(one))}</td>
+                                                <td class={`text-right px-2 ${returnClass(three)}`}>{fmt(adjusted(three))}</td>
+                                                <td class={`text-right px-2 font-bold ${returnClass(five)}`}>{fmt(adjusted(five))}</td>
+                                            </tr>
+                                        );
+                                    }) : <tr><td colSpan="8" class={`py-3 italic ${mutedClass}`}>No completed pattern occurrences in the current dataset.</td></tr>}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
                     <div class={`mt-4 text-[9px] leading-relaxed ${mutedClass}`}>
                         <strong>Method:</strong> each pattern is evaluated at its closing price using forward 1-, 3- and 5-candle price returns.
-                        The table reports the completed 5-candle observations. For bearish patterns the return is direction-adjusted,
-                        so a falling price is positive. Incomplete signals are excluded from performance statistics.
-                        Results are price-only observations and exclude fees, slippage, dividends, position sizing and stop-loss rules.
-                        Historical observations are not forecasts.
+                        The summary uses completed 5-candle observations. For bearish patterns, returns are direction-adjusted so a falling price is positive.
+                        Volume is shown as current volume divided by the 20-candle average when available. Results exclude fees, slippage, dividends,
+                        position sizing and stop-loss rules. These are historical observations, not forecasts.
                     </div>
+
                     {open.length > 0 && <div class={`mt-3 pt-3 border-t ${rowClass}`}>
                         <div class={`text-[9px] uppercase tracking-wider mb-2 ${mutedClass}`}>Current / incomplete signals</div>
                         <div class="flex flex-wrap gap-2">
