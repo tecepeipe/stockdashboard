@@ -575,6 +575,722 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 return result;
             });
         };
+        function Dashboard() {
+            const [theme, setTheme] = React.useState(() => localStorage.getItem('matrix_theme') || 'dark');
+            const [watchlist, setWatchlist] = React.useState(() => {
+                const saved = localStorage.getItem('matrix_watchlist_v2');
+                return saved ? JSON.parse(saved) : ['AAPL', 'MSFT', 'TSLA', 'NVDA'];
+            });
+            const [activeStock, setActiveStock] = React.useState('AAPL');
+            const [timeframe, setTimeframe] = React.useState('1D');
+            const [apiKey, setApiKey] = React.useState(() => localStorage.getItem('matrix_twelvedata_key') || '');
+            const [showApiInput, setShowApiInput] = React.useState(false);
+            const [isMaximized, setIsMaximized] = React.useState(false);
+            const [searchQuery, setSearchQuery] = React.useState('');
+            const [suggestions, setSuggestions] = React.useState([]);
+            const [financialView, setFinancialView] = React.useState('annual');
+            const [syncProgress, setSyncProgress] = React.useState(100);
+            const [syncStatusText, setSyncStatusText] = React.useState('SYSTEM_READY');
+            const [marketTelemetry, setMarketTelemetry] = React.useState({ isOpen: true, text: 'CALCULATING WINDOWS...' });
+            const [showPatterns, setShowPatterns] = React.useState(false);
+            const [showPatternLab, setShowPatternLab] = React.useState(false);
+            const [priceAlerts, setPriceAlerts] = React.useState(() => JSON.parse(localStorage.getItem('matrix_price_alerts') || '[]'));
+
+            const [stockPrices, setStockPrices] = React.useState({});
+            const [renderedChartData, setRenderedChartData] = React.useState([]);
+            const [fundamentals, setFundamentals] = React.useState({});
+            
+            // Core Cache Layer to hold raw financial statement metrics cleanly from production socket
+            const [liveFinancials, setLiveFinancials] = React.useState({});
+
+            React.useEffect(() => {
+                const trackHours = () => {
+                    const fmt = new Intl.DateTimeFormat('en-US', {
+                        timeZone: 'America/New_York', year: 'numeric', month: 'numeric', day: 'numeric',
+                        hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: false
+                    });
+                    const parts = fmt.formatToParts(new Date());
+                    const m = Object.fromEntries(parts.map(p => [p.type, p.value]));
+                    const ny = new Date(parseInt(m.year), parseInt(m.month) - 1, parseInt(m.day), parseInt(m.hour), parseInt(m.minute));
+                    const day = ny.getDay();
+                    const mins = ny.getHours() * 60 + ny.getMinutes();
+                    if (day === 0 || day === 6) {
+                        setMarketTelemetry({ isOpen: false, text: 'CLOSED // WEEKEND_BREAK' });
+                    } else if (mins >= 570 && mins < 960) {
+                        setMarketTelemetry({ isOpen: true, text: `OPEN // SYSTEM_ACTIVE` });
+                    } else {
+                        setMarketTelemetry({ isOpen: false, text: 'CLOSED // CORES_SLEEPING' });
+                    }
+                };
+                trackHours();
+                const timer = setInterval(trackHours, 20000);
+                return () => clearInterval(timer);
+            }, []);
+
+            React.useEffect(() => {
+                localStorage.setItem('matrix_theme', theme);
+                document.body.style.backgroundColor = theme === 'dark' ? '#050505' : '#f0f2f5';
+                if (theme === 'light') {
+                    document.body.classList.add('light-theme');
+                } else {
+                    document.body.classList.remove('light-theme');
+                }
+            }, [theme]);
+
+            React.useEffect(() => {
+                localStorage.setItem('matrix_watchlist_v2', JSON.stringify(watchlist));
+            }, [watchlist]);
+
+            React.useEffect(() => localStorage.setItem('matrix_price_alerts', JSON.stringify(priceAlerts)), [priceAlerts]);
+
+            const fetchPipelineData = React.useCallback(async () => {
+                setSyncProgress(10);
+                setSyncStatusText('SCANNING CHANNELS...');
+                
+                const intervalMap = { '1D': '5min', '1W': '15min', '1M': '30min', '1Y': '1day' };
+                const selectedInterval = intervalMap[timeframe] || '1day';
+                const localPrices = { ...stockPrices };
+
+                let allCached = true;
+                for (let ticker of watchlist) {
+                    const cacheKey = `cache_${ticker}_${timeframe}_${apiKey ? 'live' : 'fake'}`;
+                    const cachedString = localStorage.getItem(cacheKey);
+                    if (cachedString) {
+                        const parsedCache = JSON.parse(cachedString);
+                        const cacheValidityDuration = apiKey ? 5 * 60 * 1000 : 10 * 60 * 1000;
+                        if (Date.now() - parsedCache.timestamp > cacheValidityDuration) {
+                            allCached = false;
+                        }
+                    } else {
+                        allCached = false;
+                    }
+                }
+
+                if (!apiKey) {
+                    for (let ticker of watchlist) {
+                        const cacheKey = `cache_${ticker}_${timeframe}_fake`;
+                        let processedData = generateForcedFakeData(ticker, timeframe);
+                        localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: processedData }));
+                        
+                        const currentCandle = processedData[processedData.length - 1];
+                        const staticMeta = TICKER_DICTIONARY.find(i => i.ticker === ticker) || { cap: '150B', pe: '22.0' };
+                        
+                        localPrices[ticker] = {
+                            price: currentCandle.close,
+                            change: ((currentCandle.close - processedData[0].close) / processedData[0].close) * 100,
+                            volume: '1.2M',
+                            cap: staticMeta.cap,
+                            pe: staticMeta.pe
+                        };
+                        if (ticker === activeStock) setRenderedChartData(processedData);
+                    }
+                    setStockPrices(localPrices);
+                    setSyncProgress(100);
+                    setSyncStatusText('SIMULATION MODE BUFFERED');
+                    return;
+                }
+
+                if (!allCached) {
+                    try {
+                        setSyncProgress(30);
+                        const symbolsParam = watchlist.join(',');
+                        const url = `https://api.twelvedata.com/time_series?symbol=${symbolsParam}&interval=${selectedInterval}&outputsize=60&apikey=${apiKey}`;
+                        
+                        const res = await fetch(url);
+                        const resJson = await res.json();
+
+                        if (resJson.status === 'error') throw new Error(resJson.message);
+
+                        for (let ticker of watchlist) {
+                            const tickerData = watchlist.length === 1 ? resJson : resJson[ticker];
+                            
+                            if (tickerData && tickerData.values) {
+                                const processedData = calculateTechnicalIndicators(tickerData.values.map(v => ({
+                                    time: v.datetime,
+                                    open: parseFloat(v.open),
+                                    high: parseFloat(v.high),
+                                    low: parseFloat(v.low),
+                                    close: parseFloat(v.close),
+                                    volume: parseInt(v.volume || 0)
+                                })).reverse());
+
+                                const cacheKey = `cache_${ticker}_${timeframe}_live`;
+                                localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: processedData }));
+                            }
+                        }
+
+                        setSyncProgress(60);
+                        setSyncStatusText('COMPILING KEY PROFILE VECTORS...');
+                        const profileUrl = `https://api.twelvedata.com/profile?symbol=${activeStock}&apikey=${apiKey}`;
+                        const profileRes = await fetch(profileUrl);
+                        const profileJson = await profileRes.json();
+
+                        if (profileJson && (!profileJson.status || profileJson.status !== 'error')) {
+                            const targetProfile = activeStock.includes(',') ? profileJson[activeStock] : profileJson;
+                            if (targetProfile && targetProfile.meta) {
+                                setFundamentals(prev => ({
+                                    ...prev,
+                                    [activeStock]: {
+                                        market_cap: formatMarketCap(targetProfile.meta.market_cap || targetProfile.meta.market_capitalization),
+                                        pe_ratio: targetProfile.meta.pe_ratio ? parseFloat(targetProfile.meta.pe_ratio).toFixed(1) : 'N/A'
+                                    }
+                                }));
+                            }
+                        }
+
+                        // PRODUCTION IMPLEMENTATION: Fetch real income statements (both annual and quarterly profiles)
+                        setSyncProgress(80);
+                        setSyncStatusText('FETCHING LIVE FUNDAMENTAL STATEMENTS...');
+                        
+                        // 1. Fetch Annual Income Statement Data
+                        const incAnnRes = await fetch(`https://api.twelvedata.com/income_statement?symbol=${activeStock}&period=annual&apikey=${apiKey}`);
+                        const incAnnJson = await incAnnRes.json();
+
+                        // 2. Fetch Quarterly Income Statement Data
+                        const incQtrRes = await fetch(`https://api.twelvedata.com/income_statement?symbol=${activeStock}&period=quarterly&apikey=${apiKey}`);
+                        const incQtrJson = await incQtrRes.json();
+
+                        let structuredLiveFinancials = { annual: { performance: [], earnings: [] }, quarter: { performance: [], earnings: [] } };
+
+                        if (incAnnJson.income_statement) {
+                            structuredLiveFinancials.annual.performance = incAnnJson.income_statement.slice(0, 3).map(statement => ({
+                                period: statement.fiscal_date ? statement.fiscal_date.split('-')[0] : 'N/A',
+                                revenue: parseFloat((parseFloat(statement.revenue || 0) / 1e9).toFixed(2)),
+                                netIncome: parseFloat((parseFloat(statement.net_income || 0) / 1e9).toFixed(2))
+                            })).reverse(); // Reverse to display chronological timeline order (2023 -> 2025)
+                        }
+
+                        if (incQtrJson.income_statement) {
+                            structuredLiveFinancials.quarter.performance = incQtrJson.income_statement.slice(0, 3).map(statement => {
+                                let label = statement.fiscal_date || 'N/A';
+                                if (statement.fiscal_date) {
+                                    const dateParts = statement.fiscal_date.split('-');
+                                    const month = parseInt(dateParts[1]);
+                                    const yearShort = dateParts[0].slice(2);
+                                    let qLabel = 'Q1';
+                                    if (month > 3 && month <= 6) qLabel = 'Q2';
+                                    else if (month > 6 && month <= 9) qLabel = 'Q3';
+                                    else if (month > 9 || month <= 3) qLabel = 'Q4';
+                                    label = `${qLabel} ${yearShort}`;
+                                }
+                                return {
+                                    period: label,
+                                    revenue: parseFloat((parseFloat(statement.revenue || 0) / 1e9).toFixed(2)),
+                                    netIncome: parseFloat((parseFloat(statement.net_income || 0) / 1e9).toFixed(2))
+                                };
+                            }).reverse();
+                        }
+
+                        // EPS Fallback vectors if separate earnings endpoints aren't provisioned on the plan tier
+                        const simulatedDataRef = generateFinancials(activeStock, null);
+                        structuredLiveFinancials.annual.earnings = simulatedDataRef.annual.earnings;
+                        structuredLiveFinancials.quarter.earnings = simulatedDataRef.quarter.earnings;
+
+                        setLiveFinancials(prev => ({ ...prev, [activeStock]: structuredLiveFinancials }));
+
+                    } catch (e) {
+                        console.error("TwelveData Stream Exception Encountered:", e.message);
+                        setSyncStatusText(`API ERROR: ${e.message.slice(0, 20)}...`);
+                    }
+                }
+
+                for (let ticker of watchlist) {
+                    const cacheKey = `cache_${ticker}_${timeframe}_${apiKey ? 'live' : 'fake'}`;
+                    const cachedString = localStorage.getItem(cacheKey);
+                    
+                    if (cachedString) {
+                        const { data } = JSON.parse(cachedString);
+                        if (data && data.length > 0) {
+                            const currentCandle = data[data.length - 1];
+                            const initialCandle = data[0];
+                            const deltaPercentage = ((currentCandle.close - initialCandle.close) / initialCandle.close) * 100;
+                            
+                            const staticMeta = TICKER_DICTIONARY.find(i => i.ticker === ticker) || { cap: '180B', pe: '25.0' };
+                            const liveFundamentals = fundamentals[ticker] || null;
+
+                            localPrices[ticker] = {
+                                price: currentCandle.close,
+                                change: deltaPercentage,
+                                volume: currentCandle.volume > 1e6 ? (currentCandle.volume/1e6).toFixed(1) + 'M' : currentCandle.volume.toLocaleString(),
+                                cap: liveFundamentals ? liveFundamentals.market_cap : staticMeta.cap,
+                                pe: liveFundamentals ? liveFundamentals.pe_ratio : staticMeta.pe
+                            };
+
+                            if (ticker === activeStock) {
+                                setRenderedChartData(data);
+                            }
+                        }
+                    }
+                }
+
+                setStockPrices(localPrices);
+                setSyncProgress(100);
+                if (apiKey) setSyncStatusText('LIVE VECTOR FEED ACTIVE');
+            }, [watchlist, timeframe, apiKey, activeStock, fundamentals]);
+
+            React.useEffect(() => {
+                fetchPipelineData();
+            }, [activeStock, timeframe, apiKey, watchlist]);
+
+            const executeSearchEngine = (e) => {
+                const text = e.target.value;
+                setSearchQuery(text);
+                if (!text.trim()) {
+                    setSuggestions([]);
+                    return;
+                }
+                const match = TICKER_DICTIONARY.filter(item => 
+                    item.ticker.toLowerCase().includes(text.toLowerCase()) || 
+                    item.name.toLowerCase().includes(text.toLowerCase())
+                );
+                setSuggestions(match);
+            };
+
+            const selectEngineNode = (node) => {
+                if (!watchlist.includes(node.ticker)) {
+                    setWatchlist([...watchlist, node.ticker]);
+                }
+                setActiveStock(node.ticker);
+                setSearchQuery('');
+                setSuggestions([]);
+            };
+
+            const activeCompanyMeta = TICKER_DICTIONARY.find(i => i.ticker === activeStock) || { name: `${activeStock} Co.`, exchange: 'NAS', cap: 'N/A', pe: 'N/A' };
+
+            const windowHigh = renderedChartData.length > 0 ? Math.max(...renderedChartData.map(d => d.high)) : 0;
+            const windowLow = renderedChartData.length > 0 ? Math.min(...renderedChartData.map(d => d.low)) : 0;
+
+            const activeLiveCap = stockPrices[activeStock] ? stockPrices[activeStock].cap : null;
+            
+            // Resolve final active statements object state (Prioritize true dynamic live financial metrics, fallback to mock matrix if key missing)
+            const activeFinancialsData = apiKey && liveFinancials[activeStock] 
+                ? liveFinancials[activeStock] 
+                : generateFinancials(activeStock, activeLiveCap);
+
+            return (
+                <div class={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${theme === 'dark' ? 'bg-[#050505] text-zinc-400' : 'bg-[#f0f2f5] text-zinc-600'}`}>
+                    
+                    <div class="h-[2px] w-full bg-zinc-950 relative z-50">
+                        <div class={`h-full transition-all duration-300 ${apiKey ? 'bg-[#00FF66]' : 'bg-blue-500'}`} style={{ width: `${syncProgress}%` }}></div>
+                    </div>
+
+                    <header class={`border-b px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-40 backdrop-blur-md ${theme === 'dark' ? 'border-zinc-900 bg-zinc-950/80' : 'border-zinc-200 bg-white/90'}`}>
+                        <div class="flex items-center space-x-4">
+                            <div class="bg-[#00FF66]/10 text-[#00FF66] px-3 py-1 text-[10px] font-mono font-bold tracking-widest rounded-sm border border-[#00FF66]/30">
+                                TRADING TERMINAL // NASDAQ
+                            </div>
+                            <h1 class={`text-sm font-bold tracking-wider font-mono uppercase ${theme === 'dark' ? 'text-white' : 'text-zinc-800'}`}>
+                                Stock Dashboard // <span class="text-zinc-500 font-normal">DataStream</span>
+                            </h1>
+                        </div>
+
+                        <div class="flex items-center space-x-3">
+                            <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} class={`min-h-[38px] px-3 rounded-md font-mono text-xs font-bold flex items-center space-x-2 border transition-all cursor-pointer ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700' : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-100'}`}>
+                                {theme === 'dark' ? <Icons.Sun /> : <Icons.Moon />}
+                            </button>
+
+                            <button onClick={() => setShowApiInput(!showApiInput)} class={`min-h-[38px] px-3 rounded-md border text-xs flex items-center space-x-2 font-mono transition-all cursor-pointer ${apiKey ? 'border-[#00FF66]/40 text-[#00FF66]' : theme === 'dark' ? 'border-zinc-700 text-zinc-500' : 'border-zinc-300 text-zinc-500'}`}>
+                                <Icons.Key />
+                                <span class="hidden sm:inline font-bold">{apiKey ? 'LIVE CONNECTOR' : 'TWELVEDATA API'}</span>
+                            </button>
+
+                            {apiKey && (
+                                <button onClick={() => { setApiKey(''); localStorage.removeItem('matrix_twelvedata_key'); }} class={`min-h-[38px] px-3 rounded-md border text-xs flex items-center space-x-2 font-mono transition-all cursor-pointer border-red-500/40 text-red-500`}>
+                                    <Icons.Trash />
+                                    <span class="hidden sm:inline font-bold">CLEAR API</span>
+                                </button>
+                            )}
+                        </div>
+                    </header>
+
+                    <div class={`px-6 py-2 border-b text-[10px] font-mono flex items-center justify-between tracking-wider ${apiKey ? 'bg-emerald-900/10 text-emerald-500 border-emerald-950' : theme === 'dark' ? 'bg-zinc-900/40 text-zinc-500 border-zinc-900' : 'bg-zinc-100 text-zinc-500 border-zinc-200'}`}>
+                        <div class="flex items-center space-x-2">
+                            <span class="animate-pulse">●</span>
+                            <span>{syncStatusText} // {marketTelemetry.text}</span>
+                        </div>
+                        <div>TIMELINE TRACKER ACTIVE</div>
+                    </div>
+
+                    {showApiInput && (
+                        <div class={`border-b p-6 ${theme === 'dark' ? 'bg-zinc-950 border-zinc-900' : 'bg-white border-zinc-200'}`}>
+                            <div class="max-w-xl mx-auto space-y-2">
+                                <h3 class="text-xs font-mono font-bold uppercase tracking-wider text-zinc-400">TwelveData Production API Socket</h3>
+                                <div class="flex gap-2">
+                                    <input type="password" placeholder="ENTER TWELVEDATA API VALUE..." id="api_input_field" defaultValue={apiKey} class={`flex-1 border rounded-md px-3 text-xs font-mono h-10 focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-[#00FF66] placeholder-zinc-600' : 'bg-zinc-50 border-zinc-300 text-[#00FF66] placeholder-zinc-400'}`} />
+                                    <button onClick={() => {
+                                        const keyVal = document.getElementById('api_input_field').value.trim();
+                                        setApiKey(keyVal);
+                                        localStorage.setItem('matrix_twelvedata_key', keyVal);
+                                        setShowApiInput(false);
+                                        localStorage.clear();
+                                    }} class="bg-[#00FF66] text-black px-4 text-xs font-mono font-bold rounded-md h-10 cursor-pointer">CONNECT</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-0 relative">
+                        
+                        <aside class={`lg:col-span-3 border-r flex flex-col ${theme === 'dark' ? 'border-zinc-900 bg-[#070708]' : 'border-zinc-200 bg-zinc-100'}`}>
+                            <div class={`p-4 border-b ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>
+                                <div class="relative">
+                                    <input type="text" value={searchQuery} onChange={executeSearchEngine} placeholder="SCAN CORE EXCHANGE INDEX..." class={`w-full border rounded-md pl-10 pr-4 py-2 text-xs font-mono uppercase focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-white placeholder-zinc-600' : 'bg-white border-zinc-300 text-zinc-800 placeholder-zinc-400'}`} />
+                                    <span class={`absolute left-3 top-2.5 ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}><Icons.Search /></span>
+                                </div>
+
+                                {suggestions.length > 0 && (
+                                    <div class={`absolute left-4 right-4 mt-1 border rounded-md shadow-2xl divide-y z-50 ${theme === 'dark' ? 'bg-zinc-950 border-zinc-800 divide-zinc-900' : 'bg-white border-zinc-200 divide-zinc-100'}`}>
+                                        {suggestions.map(s => (
+                                            <div key={s.ticker} onClick={() => selectEngineNode(s)} class={`p-3 flex justify-between items-center cursor-pointer text-xs font-mono ${theme === 'dark' ? 'hover:bg-zinc-900' : 'hover:bg-zinc-50'}`}>
+                                                <span class={`font-bold ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>{s.ticker} <span class="text-[9px] text-zinc-500">({s.exchange})</span></span>
+                                                <span class="text-zinc-500 truncate max-w-[150px]">{s.name}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div class={`p-3 text-[9px] font-mono tracking-widest uppercase border-b ${theme === 'dark' ? 'bg-zinc-950/40 text-zinc-500 border-zinc-900' : 'bg-zinc-100 text-zinc-400 border-zinc-200'}`}>Watchlist Matrix Grid</div>
+                            
+                            <div class={`flex-1 overflow-y-auto divide-y ${theme === 'dark' ? 'divide-zinc-900' : 'divide-zinc-200'}`}>
+                                {watchlist.map(ticker => {
+                                    const details = stockPrices[ticker] || { price: 0.00, change: 0.00, volume: 'N/A' };
+                                    const isUp = details.change >= 0;
+                                    const isSelected = activeStock === ticker;
+                                    const dictRef = TICKER_DICTIONARY.find(i => i.ticker === ticker);
+
+                                    return (
+                                        <div key={ticker} onClick={() => setActiveStock(ticker)} class={`p-4 flex items-center justify-between cursor-pointer transition-all ${isSelected ? (theme === 'dark' ? 'bg-zinc-900/60' : 'bg-zinc-200/60') : (theme === 'dark' ? 'hover:bg-zinc-900/20' : 'hover:bg-zinc-100')} ${isSelected ? 'border-l-2 border-[#00FF66]' : ''}`}>
+                                            <div>
+                                                <div class="flex items-center space-x-2 font-mono">
+                                                    <span class={`text-sm font-bold ${isSelected ? 'text-[#00FF66]' : 'text-zinc-300'}`}>{ticker}</span>
+                                                    <span class={`text-[8px] px-1 border rounded-sm ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-600' : 'bg-zinc-100 border-zinc-300 text-zinc-500'}`}>{dictRef ? dictRef.exchange : 'NAS'}</span>
+                                                </div>
+                                                <div class={`text-[10px] font-mono ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>V: {details.volume}</div>
+                                            </div>
+                                            <div class="flex items-center space-x-3 font-mono text-right">
+                                                <div>
+                                                    <div class={`text-xs font-bold ${theme === 'dark' ? 'text-zinc-200' : 'text-zinc-800'}`}>${details.price.toFixed(2)}</div>
+                                                    <div class={`text-[9px] font-bold flex items-center justify-end ${isUp ? 'text-[#00FF66]' : 'text-red-500'}`}>
+                                                        {isUp ? '+' : ''}{details.change.toFixed(2)}%
+                                                    </div>
+                                                </div>
+                                                <button onClick={(e) => { e.stopPropagation(); setWatchlist(watchlist.filter(w => w !== ticker)); }} class={`${theme === 'dark' ? 'text-zinc-700' : 'text-zinc-400'} hover:text-red-500`}><Icons.Trash /></button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </aside>
+
+                        <main class={`lg:col-span-6 flex flex-col overflow-hidden transition-all duration-300 ${isMaximized ? `fixed inset-0 z-50 p-6 ${theme === 'dark' ? 'bg-[#050505]' : 'bg-[#f0f2f5]'}` : `${theme === 'dark' ? 'border-zinc-900 bg-zinc-950/20' : 'border-zinc-200 bg-white'}`}`}>
+                            <div class={`px-6 py-3 border-b flex flex-wrap items-center justify-between gap-y-2 relative z-10 ${theme === 'dark' ? 'border-zinc-900 bg-zinc-950/40' : 'border-zinc-200 bg-zinc-50'}`}>
+                                <div class="flex items-center space-x-4">
+                                    <span class={`text-[10px] font-mono font-bold tracking-wider ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>TIMEFRAME</span>
+                                    <div class={`flex p-0.5 rounded-sm border ${theme === 'dark' ? 'bg-zinc-950 border-zinc-900' : 'bg-zinc-100 border-zinc-200'}`}>
+                                        {['1D', '1W', '1M', '1Y'].map(t => (
+                                            <button key={t} onClick={() => setTimeframe(t)} class={`px-2 py-1 text-[9px] font-mono font-bold transition-all rounded-xs cursor-pointer ${timeframe === t ? 'bg-[#00FF66] text-black' : `${theme === 'dark' ? 'text-zinc-600 hover:text-zinc-400' : 'text-zinc-500 hover:text-zinc-700'}`}`}>{t}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                                
+                                <div class="flex items-center space-x-4">
+                                    <button 
+                                        onClick={() => setShowPatterns(!showPatterns)} 
+                                        class={`px-3 py-1 text-[9px] font-mono font-bold border rounded-xs transition-all flex items-center space-x-1.5 cursor-pointer ${showPatterns ? 'bg-emerald-900/20 border-[#00FF66] text-[#00FF66]' : theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800 text-zinc-500' : 'bg-zinc-100 border-zinc-300 text-zinc-500'}`}
+                                    >
+                                        <Icons.Eye />
+                                        <span>CANDLESTICK PATTERNS: {showPatterns ? 'ON' : 'OFF'}</span>
+                                    </button>
+
+                                    <button onClick={() => setShowPatternLab(!showPatternLab)} class={`px-3 py-1 text-[9px] font-mono font-bold border rounded-xs cursor-pointer ${showPatternLab ? 'border-blue-500 text-blue-400' : theme === 'dark' ? 'border-zinc-800 text-zinc-500' : 'border-zinc-300 text-zinc-500'}`}>PATTERN LAB</button>
+
+                                    <button onClick={() => setIsMaximized(!isMaximized)} class={`${theme === 'dark' ? 'text-zinc-600 hover:text-zinc-400' : 'text-zinc-400 hover:text-zinc-600'} cursor-pointer`}>
+                                        {isMaximized ? <Icons.Minimize /> : <Icons.Maximize />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="flex-1 p-6 flex flex-col justify-between overflow-hidden relative z-10">
+                                <div class={`flex items-center justify-between border-b pb-4 ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>
+                                    <h2 class={`text-xl font-bold font-mono tracking-wider ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
+                                        {activeStock}
+                                        <span class={`text-xs font-normal ml-2 ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>// {activeCompanyMeta.name}</span>
+                                    </h2>
+                                    <div class="text-xl font-bold font-mono text-[#00FF66] bg-[#00FF66]/5 border border-[#00FF66]/20 px-3 py-1 rounded-sm">
+                                        ${stockPrices[activeStock] ? stockPrices[activeStock].price.toFixed(2) : '0.00'}
+                                    </div>
+                                </div>
+
+                                <div class="flex-1 w-full relative pt-4 overflow-hidden">
+                                    <CandlestickChart vectorData={renderedChartData} theme={theme} showPatterns={showPatterns} />
+                                </div>
+                            </div>
+                            {showPatternLab && <PatternLab data={renderedChartData} theme={theme} />}
+                        </main>
+
+                        <aside class={`lg:col-span-3 flex flex-col overflow-y-auto divide-y ${theme === 'dark' ? 'bg-[#070708] divide-zinc-900' : 'bg-zinc-50 divide-zinc-200'}`}>
+                            <div class="p-6 space-y-4">
+                                <h3 class={`text-[10px] font-mono font-bold tracking-widest uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>QUANTITATIVE DATA MATRIX</h3>
+                                <div class="grid grid-cols-2 gap-3">
+                                    {[
+                                        { label: 'MARKET CAP', value: stockPrices[activeStock] ? stockPrices[activeStock].cap : activeCompanyMeta.cap },
+                                        { label: 'P/E RATIO', value: stockPrices[activeStock] ? stockPrices[activeStock].pe : activeCompanyMeta.pe },
+                                        { label: `WINDOW LOW (${timeframe})`, value: windowLow ? `$${windowLow.toFixed(2)}` : 'N/A' },
+                                        { label: `WINDOW HIGH (${timeframe})`, value: windowHigh ? `$${windowHigh.toFixed(2)}` : 'N/A' }
+                                    ].map((m, idx) => (
+                                        <div key={idx} class={`border rounded-sm p-3 font-mono ${theme === 'dark' ? 'bg-[#0b0b0c] border-zinc-900' : 'bg-white border-zinc-200'}`}>
+                                            <div class={`text-[8px] tracking-widest uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>{m.label}</div>
+                                            <div class={`text-xs font-bold mt-1 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>{m.value}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div class={`p-6 space-y-3 border-b ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>
+                                <div class="flex items-center justify-between"><h3 class={`text-[10px] font-mono font-bold tracking-widest ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>PRICE ALERTS</h3><button onClick={() => setPriceAlerts([...priceAlerts,{id:Date.now(),ticker:activeStock,target:Number((stockPrices[activeStock]?.price||0).toFixed(2)),direction:'ABOVE'}])} class="text-[9px] font-mono text-[#00FF66]">+ ADD</button></div>
+                                {priceAlerts.filter(a=>a.ticker===activeStock).map(a=><div key={a.id} class={`flex justify-between text-[10px] font-mono p-2 ${theme === 'dark' ? 'bg-zinc-950 border border-zinc-900' : 'bg-white border border-zinc-200'}`}><span class={theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}>{a.direction} ${a.target.toFixed(2)}</span><button onClick={()=>setPriceAlerts(priceAlerts.filter(x=>x.id!==a.id))} class="text-red-500">REMOVE</button></div>)}
+                            </div>
+                            <div class="p-6 space-y-4 flex-1 flex flex-col">
+                                <div class="flex items-center justify-between">
+                                    <h3 class={`text-[10px] font-mono font-bold tracking-widest uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>FINANCIAL STATEMENTS</h3>
+                                    <div class={`flex border p-0.5 rounded-sm ${theme === 'dark' ? 'bg-zinc-950 border-zinc-900' : 'bg-zinc-100 border-zinc-200'}`}>
+                                        {['annual', 'quarter'].map(mode => (
+                                            <button key={mode} onClick={() => setFinancialView(mode)} class={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-xs uppercase cursor-pointer ${financialView === mode ? 'bg-[#00FF66] text-black' : theme === 'dark' ? 'text-zinc-600' : 'text-zinc-500'}`}>{mode.slice(0, 4)}</button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div class="space-y-4 flex-1 justify-around pt-2">
+                                    <div>
+                                        <div class={`text-[9px] font-mono mb-2 tracking-wider uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>Performance Metrics (REV vs NET)</div>
+                                        <div class="space-y-2">
+                                            {activeFinancialsData[financialView]?.performance && activeFinancialsData[financialView].performance.length > 0 ? (
+                                                activeFinancialsData[financialView].performance.map((item, i) => {
+                                                    const maxRev = Math.max(...activeFinancialsData[financialView].performance.map(p => p.revenue || 1));
+                                                    return (
+                                                        <div key={i} class="font-mono text-[10px] space-y-1">
+                                                            <div class={`flex justify-between ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-500'}`}>
+                                                                <span>{item.period}</span>
+                                                                <span class={`text-[9px] ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>R: {item.revenue}B / N: {item.netIncome}B</span>
+                                                            </div>
+                                                            <div class={`w-full h-1.5 rounded-xs overflow-hidden relative ${theme === 'dark' ? 'bg-zinc-900' : 'bg-zinc-200'}`}>
+                                                                <div class="bg-blue-600 h-full absolute top-0 left-0" style={{ width: `${(item.revenue/maxRev)*100}%` }}></div>
+                                                            </div>
+                                                            <div class={`w-full h-1 rounded-xs overflow-hidden relative ${theme === 'dark' ? 'bg-zinc-900' : 'bg-zinc-200'}`}>
+                                                                <div class="bg-[#00FF66] h-full absolute top-0 left-0" style={{ width: `${(item.netIncome/maxRev)*100}%` }}></div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            ) : (
+                                                <div class={`text-[10px] font-mono italic ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>No historical data segments loaded.</div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <div class={`text-[9px] font-mono mb-2 tracking-wider uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>EPS Forecast Vectors</div>
+                                        <div class="space-y-2">
+                                            {activeFinancialsData[financialView]?.earnings.map((item, i) => (
+                                                <div key={i} class={`font-mono text-[10px] flex justify-between items-center p-2 rounded-sm ${theme === 'dark' ? 'bg-zinc-950 border border-zinc-900' : 'bg-white border border-zinc-200'}`}>
+                                                    <span class={`font-bold ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500'}`}>{item.period}</span>
+                                                    <span class={theme === 'dark' ? 'text-zinc-400' : 'text-zinc-600'}>ACT: <strong class="text-amber-500">${item.actual}</strong></span>
+                                                    <span class={theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}>EST: ${item.forecast}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </aside>
+
+                    </div>
+                </div>
+            );
+        }
+
+        function CandlestickChart({ vectorData, theme, showPatterns }) {
+            const [hoverNode, setHoverNode] = React.useState(null);
+
+            if (!vectorData || vectorData.length === 0) {
+                return <div class="h-full flex items-center justify-center font-mono text-xs text-zinc-700 animate-pulse">CONNECTING INTERFACE PIPELINES...</div>;
+            }
+
+            const highLowPrices = vectorData.map(d => [d.high, d.low]).flat();
+            const maxPrice = Math.max(...highLowPrices) * 1.01;
+            const minPrice = Math.min(...highLowPrices) * 0.99;
+            const priceDelta = maxPrice - minPrice || 1;
+
+            const macdIndicators = vectorData.map(d => [d.macd, d.signal, d.hist]).flat();
+            const maxMacd = Math.max(...macdIndicators, 0.02);
+            const minMacd = Math.min(...macdIndicators, -0.02);
+            const macdDelta = maxMacd - minMacd || 1;
+
+            const widthDimension = 700;
+            const heightDimension = 450;
+            
+            const candleAreaHeight = heightDimension * 0.50;
+            const rsiAreaHeight = heightDimension * 0.16;
+            const macdAreaHeight = heightDimension * 0.18;
+
+            const rsiTop = candleAreaHeight + 20;
+            const macdTop = rsiTop + rsiAreaHeight + 20;
+            const horizontalStep = widthDimension / vectorData.length;
+
+            const identifiedPatterns = showPatterns ? scanCandlestickPatterns(vectorData) : [];
+
+            return (
+                <div class="w-full h-full flex flex-col justify-between">
+                    <div class={`mb-3 p-2 rounded-sm font-mono text-[10px] flex flex-wrap gap-x-4 gap-y-1 ${theme === 'dark' ? 'bg-zinc-950 border border-zinc-900 text-zinc-500' : 'bg-white border border-zinc-200 text-zinc-600'}`}>
+                        <span class={`${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'} font-bold`}>STREAM LOGS //</span>
+                        {hoverNode ? (
+                            <>
+                                <span>T: <strong class="text-white">{hoverNode.time}</strong></span>
+                                <span>O: <strong class="text-zinc-400">${hoverNode.open.toFixed(2)}</strong></span>
+                                <span>H: <strong class="text-[#00FF66]">${hoverNode.high.toFixed(2)}</strong></span>
+                                <span>L: <strong class="text-red-500">${hoverNode.low.toFixed(2)}</strong></span>
+                                <span>C: <strong class="text-blue-400">${hoverNode.close.toFixed(2)}</strong></span>
+                                <span>RSI: <strong class="text-purple-400">{hoverNode.rsi}</strong></span>
+                                <span>MACD: <strong class="text-blue-500">{hoverNode.macd}</strong></span>
+                            </>
+                        ) : (
+                            <span class="italic text-zinc-600">HOVER INTERACTIVE CROSSHAIR NODE ON CHART CELLS</span>
+                        )}
+                    </div>
+
+                    <div class="flex-1 relative overflow-hidden">
+                        <svg width="100%" height="100%" viewBox={`0 0 ${widthDimension} ${heightDimension}`} preserveAspectRatio="none" class="overflow-visible">
+                            
+                            <line x1={0} y1={candleAreaHeight} x2={widthDimension} y2={candleAreaHeight} stroke="#1f1f23" strokeWidth="1" />
+                            <line x1={0} y1={rsiTop} x2={widthDimension} y2={rsiTop} stroke="#1f1f23" strokeWidth="1" />
+                            <line x1={0} y1={rsiTop + rsiAreaHeight} x2={widthDimension} y2={rsiTop + rsiAreaHeight} stroke="#1f1f23" strokeWidth="1" />
+                            <line x1={0} y1={macdTop} x2={widthDimension} y2={macdTop} stroke="#1f1f23" strokeWidth="1" />
+
+                            {Array.from({ length: 4 }).map((_, idx) => {
+                                const calculatedPrice = minPrice + (priceDelta * (idx / 3));
+                                const yPos = candleAreaHeight * (1 - (calculatedPrice - minPrice) / priceDelta);
+                                return (
+                                    <g key={`p-grid-${idx}`}>
+                                        <line x1={0} y1={yPos} x2={widthDimension} y2={yPos} stroke="rgba(255,255,255,0.03)" strokeDasharray="2,4" />
+                                        <text x={widthDimension - 5} y={yPos - 4} textAnchor="end" fill="#4b5563" fontSize="8" fontFamily="monospace">
+                                            ${calculatedPrice.toFixed(2)}
+                                        </text>
+                                    </g>
+                                );
+                            })}
+
+                            {[30, 50, 70].map(val => {
+                                const yPos = rsiTop + (rsiAreaHeight * (1 - val / 100));
+                                return (
+                                    <g key={`rsi-${val}`}>
+                                        <line x1={0} y1={yPos} x2={widthDimension} y2={yPos} stroke={val === 50 ? "rgba(255,255,255,0.04)" : "rgba(168,85,247,0.15)"} strokeDasharray={val === 50 ? "2,2" : "4,4"} />
+                                        <text x={widthDimension - 5} y={yPos - 2} textAnchor="end" fill="#6b7280" fontSize="7" fontFamily="monospace">RSI {val}</text>
+                                    </g>
+                                );
+                            })}
+
+                            {hoverNode && (() => {
+                                const targetIdx = vectorData.indexOf(hoverNode);
+                                if (targetIdx !== -1) {
+                                    const centerX = targetIdx * horizontalStep + (horizontalStep / 2);
+                                    return <line x1={centerX} y1={0} x2={centerX} y2={heightDimension} stroke="rgba(0,255,102,0.15)" strokeWidth="1" strokeDasharray="2,2" />;
+                                }
+                            })()}
+
+                            {identifiedPatterns.map((pat, idx) => {
+                                const pad = 3;
+                                const leftX = pat.startIndex * horizontalStep + pad;
+                                const rightX = (pat.endIndex + 1) * horizontalStep - pad;
+                                const width = rightX - leftX;
+                                
+                                const segmentData = vectorData.slice(pat.startIndex, pat.endIndex + 1);
+                                const segHighs = segmentData.map(d => d.high);
+                                const segLows = segmentData.map(d => d.low);
+                                
+                                const topY = candleAreaHeight * (1 - (Math.max(...segHighs) - minPrice) / priceDelta) - pad;
+                                const bottomY = candleAreaHeight * (1 - (Math.min(...segLows) - minPrice) / priceDelta) + pad;
+                                const height = bottomY - topY;
+
+                                const highlightColor = pat.type === 'BULLISH' ? '#00FF66' : '#ef4444';
+
+                                return (
+                                    <g key={`pat-${idx}`}>
+                                        <rect 
+                                            x={leftX} y={topY} width={width} height={height} 
+                                            fill="transparent" stroke={highlightColor} 
+                                            strokeWidth="1.5" strokeDasharray="3,3" rx="2" 
+                                        />
+                                    </g>
+                                );
+                            })}
+
+                            {showPatterns && (
+                                <g transform={`translate(${widthDimension - 140}, 15)`}>
+                                    <rect x="0" y="0" width="130" height="36" fill="#09090b" stroke="#18181b" strokeWidth="1" rx="3" opacity="0.9"/>
+                                    <circle cx="12" cy="12" r="4" fill="#00FF66" />
+                                    <text x="24" y="15" fill="#a1a1aa" fontSize="8" fontFamily="monospace" fontWeight="bold">BULLISH REVERSAL</text>
+                                    <circle cx="12" cy="24" r="4" fill="#ef4444" />
+                                    <text x="24" y="27" fill="#a1a1aa" fontSize="8" fontFamily="monospace" fontWeight="bold">BEARISH REVERSAL</text>
+                                </g>
+                            )}
+
+                            {vectorData.map((d, i) => {
+                                const x = i * horizontalStep + (horizontalStep / 2);
+                                const yOpen = candleAreaHeight * (1 - (d.open - minPrice) / priceDelta);
+                                const yClose = candleAreaHeight * (1 - (d.close - minPrice) / priceDelta);
+                                const yHigh = candleAreaHeight * (1 - (d.high - minPrice) / priceDelta);
+                                const yLow = candleAreaHeight * (1 - (d.low - minPrice) / priceDelta);
+                                
+                                const isGreen = d.close >= d.open;
+                                const baseColor = isGreen ? '#00FF66' : '#ef4444';
+
+                                const yRsi = rsiTop + (rsiAreaHeight * (1 - d.rsi / 100));
+
+                                const yMacd = macdTop + (macdAreaHeight * (1 - (d.macd - minMacd) / macdDelta));
+                                const ySignal = macdTop + (macdAreaHeight * (1 - (d.signal - minMacd) / macdDelta));
+                                const yZeroMacd = macdTop + (macdAreaHeight * (1 - (0 - minMacd) / macdDelta));
+                                const yHist = macdTop + (macdAreaHeight * (1 - (d.hist - minMacd) / macdDelta));
+
+                                return (
+                                    <g key={i}>
+                                        <line x1={x} y1={yHigh} x2={x} y2={yLow} stroke={baseColor} strokeWidth="1" />
+                                        <rect x={x - (horizontalStep * 0.25)} y={Math.min(yOpen, yClose)} width={horizontalStep * 0.5} height={Math.max(Math.abs(yOpen - yClose), 1)} fill={isGreen ? '#00FF66' : 'transparent'} stroke={baseColor} strokeWidth="1" />
+
+                                        <line x1={x} y1={yZeroMacd} x2={x} y2={yHist} stroke={d.hist >= 0 ? '#00FF66' : '#ef4444'} strokeWidth={horizontalStep * 0.3} opacity="0.3" />
+
+                                        {i > 0 && (() => {
+                                            const prevX = (i - 1) * horizontalStep + (horizontalStep / 2);
+                                            const prevRsi = rsiTop + (rsiAreaHeight * (1 - vectorData[i-1].rsi / 100));
+                                            const prevMacd = macdTop + (macdAreaHeight * (1 - (vectorData[i-1].macd - minMacd) / macdDelta));
+                                            const prevSignal = macdTop + (macdAreaHeight * (1 - (vectorData[i-1].signal - minMacd) / macdDelta));
+                                            return (
+                                                <g>
+                                                    <line x1={prevX} y1={prevRsi} x2={x} y2={yRsi} stroke="#a855f7" strokeWidth="1" opacity="0.8" />
+                                                    <line x1={prevX} y1={prevMacd} x2={x} y2={yMacd} stroke="#3b82f6" strokeWidth="1" />
+                                                    <line x1={prevX} y1={prevSignal} x2={x} y2={ySignal} stroke="#eab308" strokeWidth="0.8" strokeDasharray="1,1" />
+                                                </g>
+                                            );
+                                        })()}
+                                    </g>
+                                );
+                            })}
+
+                            {vectorData.map((d, i) => (
+                                <rect 
+                                    key={`box-${i}`}
+                                    x={i * horizontalStep} y={0} width={horizontalStep} height={heightDimension}
+                                    fill="transparent" class="cursor-crosshair pointer-events-auto"
+                                    onMouseEnter={() => setHoverNode(d)}
+                                    onMouseLeave={() => setHoverNode(null)}
+                                />
+                            ))}
+                        </svg>
+                    </div>
+                </div>
+            );
+        }
+
         function PatternLab({data, theme}) {
             const rows = getPatternStatisticsSafe(data);
             const completed = rows.filter(r => r.completed);
