@@ -190,90 +190,286 @@
         };
 
         const scanCandlestickPatterns = (data) => {
-            if (!Array.isArray(data) || data.length < 3) return [];
+            if (!Array.isArray(data) || data.length < 4) return [];
 
             const segments = [];
             const trendLookback = 3;
             const atrLookback = 14;
             const average = values => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
-            const trueRange = (candle, previous) => Math.max(
-                candle.high - candle.low,
-                Math.abs(candle.high - (previous?.close ?? candle.close)),
-                Math.abs(candle.low - (previous?.close ?? candle.close))
-            );
+            const trueRange = (candle, previous) => {
+                if (!candle) return 0;
+                return Math.max(
+                    Number(candle.high) - Number(candle.low),
+                    Math.abs(Number(candle.high) - Number(previous?.close ?? candle.close)),
+                    Math.abs(Number(candle.low) - Number(previous?.close ?? candle.close))
+                );
+            };
             const atrAt = index => {
-                const start = Math.max(0, index - atrLookback + 1);
+                const end = Math.max(0, index - 1);
+                const start = Math.max(0, end - atrLookback + 1);
                 const ranges = [];
-                for (let j = start; j <= index; j++) ranges.push(trueRange(data[j], data[j - 1]));
+                for (let j = start; j <= end; j++) ranges.push(trueRange(data[j], data[j - 1]));
                 return average(ranges) || 0.01;
             };
+
+            // IMPORTANT: trend is calculated only from candles BEFORE the pattern candle.
+            // This prevents the reversal candle itself from creating the trend it is
+            // supposed to reverse.
             const trendAt = index => {
-                const start = Math.max(0, index - trendLookback);
-                const change = data[index].close - data[start].close;
-                const threshold = atrAt(index) * 0.35;
+                const end = index - 1;
+                const start = end - trendLookback + 1;
+                if (start < 0 || end < 0) return 'SIDEWAYS';
+                const change = Number(data[end].close) - Number(data[start].close);
+                const priorAtr = atrAt(index);
+                const threshold = priorAtr * 0.35;
                 if (change > threshold) return 'UP';
                 if (change < -threshold) return 'DOWN';
                 return 'SIDEWAYS';
             };
+
             const averageVolumeAt = index => {
-                const start = Math.max(0, index - atrLookback);
-                return average(data.slice(start, index).map(candle => Number(candle.volume) || 0));
-            };
-            const addPattern = (startIndex, endIndex, type, label, confidence = 'WATCH') => {
-                segments.push({ startIndex, endIndex, type, label, confidence });
+                const end = index - 1;
+                const start = Math.max(0, end - atrLookback + 1);
+                return average(data.slice(start, end + 1).map(candle => Number(candle.volume) || 0));
             };
 
-            for (let i = 1; i < data.length; i++) {
+            const addPattern = (startIndex, endIndex, type, label, context) => {
+                const volumeAverage = averageVolumeAt(endIndex);
+                const currentVolume = Number(data[endIndex]?.volume) || 0;
+                const volumeRatio = volumeAverage > 0 && currentVolume > 0 ? currentVolume / volumeAverage : null;
+                segments.push({
+                    startIndex,
+                    endIndex,
+                    type,
+                    label,
+                    confidence: volumeRatio != null && volumeRatio >= 1.1 ? 'VOLUME_SUPPORT' : 'WATCH',
+                    context: {
+                        priorTrend: context.priorTrend,
+                        atr: context.atr,
+                        bodyPct: context.bodyPct,
+                        upperShadowPct: context.upperShadowPct,
+                        lowerShadowPct: context.lowerShadowPct,
+                        volumeRatio
+                    }
+                });
+            };
+
+            for (let i = trendLookback; i < data.length; i++) {
                 const curr = data[i];
                 const prev = data[i - 1];
-                const currBody = Math.abs(curr.close - curr.open);
-                const currRange = Math.max(curr.high - curr.low, 0.000001);
-                const prevBody = Math.abs(prev.close - prev.open);
-                const isCurrGreen = curr.close >= curr.open;
-                const isPrevGreen = prev.close >= prev.open;
+                const currOpen = Number(curr.open);
+                const currClose = Number(curr.close);
+                const currHigh = Number(curr.high);
+                const currLow = Number(curr.low);
+                const prevOpen = Number(prev.open);
+                const prevClose = Number(prev.close);
+
+                if (![currOpen, currClose, currHigh, currLow, prevOpen, prevClose].every(Number.isFinite)) continue;
+
+                const currBody = Math.abs(currClose - currOpen);
+                const currRange = Math.max(currHigh - currLow, 0.000001);
+                const prevBody = Math.abs(prevClose - prevOpen);
+                const isCurrGreen = currClose > currOpen;
+                const isPrevGreen = prevClose > prevOpen;
                 const trend = trendAt(i);
                 const atr = atrAt(i);
-                const volumeAverage = averageVolumeAt(i);
-                const volumeConfirmed = !volumeAverage || !curr.volume || curr.volume >= volumeAverage * 1.1;
 
-                const lowerWick = Math.min(curr.open, curr.close) - curr.low;
-                const upperWick = curr.high - Math.max(curr.open, curr.close);
+                const lowerWick = Math.max(0, Math.min(currOpen, currClose) - currLow);
+                const upperWick = Math.max(0, currHigh - Math.max(currOpen, currClose));
+                const bodyPct = currBody / currRange;
+                const upperShadowPct = upperWick / currRange;
+                const lowerShadowPct = lowerWick / currRange;
                 const body = Math.max(currBody, 0.000001);
 
-                // Reversal patterns require an opposing preceding trend.
-                if (trend === 'DOWN' && lowerWick >= body * 1.8 && upperWick <= body * 0.5 && currBody / currRange >= 0.08) {
-                    addPattern(i, i, 'BULLISH', 'HAMMER', volumeConfirmed ? 'CONFIRMED_VOLUME' : 'WATCH');
+                const context = {
+                    priorTrend: trend,
+                    atr,
+                    bodyPct,
+                    upperShadowPct,
+                    lowerShadowPct
+                };
+
+                // Hammer: a small real body near the top of the range, with a
+                // lower shadow at least twice the body, little upper shadow,
+                // and a genuine preceding downtrend.
+                if (
+                    trend === 'DOWN' &&
+                    lowerWick >= body * 2 &&
+                    upperWick <= body * 0.35 &&
+                    bodyPct <= 0.35
+                ) {
+                    addPattern(i, i, 'BULLISH', 'HAMMER', context);
                     continue;
                 }
 
-                if (trend === 'UP' && upperWick >= body * 1.8 && lowerWick <= body * 0.5 && currBody / currRange >= 0.08) {
-                    addPattern(i, i, 'BEARISH', 'SHOOTING STAR', volumeConfirmed ? 'CONFIRMED_VOLUME' : 'WATCH');
+                // Shooting star: mirror image of a hammer after a genuine
+                // preceding uptrend.
+                if (
+                    trend === 'UP' &&
+                    upperWick >= body * 2 &&
+                    lowerWick <= body * 0.35 &&
+                    bodyPct <= 0.35
+                ) {
+                    addPattern(i, i, 'BEARISH', 'SHOOTING STAR', context);
                     continue;
                 }
 
-                if (prevBody > 0 && currBody > prevBody * 1.1) {
-                    const bullishEngulfing = !isPrevGreen && isCurrGreen && curr.close >= prev.open && curr.open <= prev.close;
-                    const bearishEngulfing = isPrevGreen && !isCurrGreen && curr.close <= prev.open && curr.open >= prev.close;
-                    if (trend === 'DOWN' && bullishEngulfing) {
-                        addPattern(i - 1, i, 'BULLISH', 'BULLISH ENGULFING', volumeConfirmed ? 'CONFIRMED_VOLUME' : 'WATCH');
+                // Engulfing patterns compare real bodies, not the full candle
+                // range. The current body must completely contain the prior body.
+                if (prevBody > 0) {
+                    const bullishEngulfing =
+                        trend === 'DOWN' &&
+                        !isPrevGreen &&
+                        isCurrGreen &&
+                        currOpen <= prevClose &&
+                        currClose >= prevOpen &&
+                        currBody >= prevBody;
+
+                    const bearishEngulfing =
+                        trend === 'UP' &&
+                        isPrevGreen &&
+                        !isCurrGreen &&
+                        currOpen >= prevClose &&
+                        currClose <= prevOpen &&
+                        currBody >= prevBody;
+
+                    if (bullishEngulfing) {
+                        addPattern(i - 1, i, 'BULLISH', 'BULLISH ENGULFING', context);
                         continue;
                     }
-                    if (trend === 'UP' && bearishEngulfing) {
-                        addPattern(i - 1, i, 'BEARISH', 'BEARISH ENGULFING', volumeConfirmed ? 'CONFIRMED_VOLUME' : 'WATCH');
+
+                    if (bearishEngulfing) {
+                        addPattern(i - 1, i, 'BEARISH', 'BEARISH ENGULFING', context);
                         continue;
                     }
                 }
 
-                // Scale-independent Marubozu test using ATR rather than a fixed price value.
-                const bodyToRange = currBody / currRange;
+                // Near-Marubozu: very small upper and lower shadows, a large
+                // body, and a body that is meaningful relative to prior ATR.
                 const minimalBody = currBody >= atr * 0.6;
-                if (bodyToRange >= 0.90 && minimalBody) {
-                    addPattern(i, i, isCurrGreen ? 'BULLISH' : 'BEARISH', isCurrGreen ? 'BULLISH MARUBOZU' : 'BEARISH MARUBOZU', volumeConfirmed ? 'CONFIRMED_VOLUME' : 'WATCH');
+                if (
+                    bodyPct >= 0.90 &&
+                    upperShadowPct <= 0.05 &&
+                    lowerShadowPct <= 0.05 &&
+                    minimalBody
+                ) {
+                    addPattern(
+                        i,
+                        i,
+                        isCurrGreen ? 'BULLISH' : 'BEARISH',
+                        isCurrGreen ? 'BULLISH MARUBOZU' : 'BEARISH MARUBOZU',
+                        context
+                    );
                 }
             }
+
             return segments;
         };
 
+        // Deterministic regression fixtures for the detector. These are deliberately
+        // small synthetic candles with known answers; they protect the recognition
+        // rules from accidental regressions while the live/mock market data changes.
+        const CANDLE_PATTERN_TESTS = [
+            {
+                name: 'HAMMER',
+                expected: 'HAMMER',
+                candles: [
+                    {open:110, high:111, low:109.5, close:109.8, volume:1000},
+                    {open:108, high:108.5, low:107.5, close:107.8, volume:1000},
+                    {open:106, high:106.5, low:105.5, close:105.8, volume:1000},
+                    {open:105.6, high:106.0, low:101.0, close:105.5, volume:1300}
+                ]
+            },
+            {
+                name: 'SHOOTING STAR',
+                expected: 'SHOOTING STAR',
+                candles: [
+                    {open:100, high:101, low:99, close:100.8, volume:1000},
+                    {open:102, high:103, low:101.5, close:102.8, volume:1000},
+                    {open:104, high:105, low:103.5, close:104.8, volume:1000},
+                    {open:105.0, high:110.0, low:104.8, close:105.2, volume:1300}
+                ]
+            },
+            {
+                name: 'BULLISH ENGULFING',
+                expected: 'BULLISH ENGULFING',
+                candles: [
+                    {open:110, high:111, low:108.5, close:109, volume:1000},
+                    {open:107, high:108, low:105.5, close:106, volume:1000},
+                    {open:104, high:105, low:102.5, close:103, volume:1000},
+                    {open:102, high:108, low:101.5, close:107, volume:1300}
+                ]
+            },
+            {
+                name: 'BEARISH ENGULFING',
+                expected: 'BEARISH ENGULFING',
+                candles: [
+                    {open:100, high:101.5, low:99, close:101, volume:1000},
+                    {open:102, high:103.5, low:101, close:103, volume:1000},
+                    {open:104, high:105.5, low:103, close:105, volume:1000},
+                    {open:106, high:106.5, low:99.5, close:100, volume:1300}
+                ]
+            },
+            {
+                name: 'BULLISH MARUBOZU',
+                expected: 'BULLISH MARUBOZU',
+                candles: [
+                    {open:100, high:101, low:99, close:100.5, volume:1000},
+                    {open:100.5, high:101.5, low:100, close:101, volume:1000},
+                    {open:101, high:102, low:100.5, close:101.5, volume:1000},
+                    {open:100, high:106.02, low:99.98, close:106, volume:1300}
+                ]
+            },
+            {
+                name: 'BEARISH MARUBOZU',
+                expected: 'BEARISH MARUBOZU',
+                candles: [
+                    {open:106, high:107, low:105, close:106.5, volume:1000},
+                    {open:106.5, high:107.5, low:106, close:107, volume:1000},
+                    {open:107, high:108, low:106.5, close:107.5, volume:1000},
+                    {open:107, high:107.02, low:100.98, close:101, volume:1300}
+                ]
+            }
+        ];
+
+        const runCandlestickPatternSelfTests = () => CANDLE_PATTERN_TESTS.map(test => {
+            const matches = scanCandlestickPatterns(test.candles).some(pattern => pattern.label === test.expected);
+            return {...test, passed: matches};
+        });
+
+        const CANDLE_PATTERN_TEST_RESULTS = runCandlestickPatternSelfTests();
+const getPatternStatistics = data => getPatternStatisticsSafe(data);
+        const getPatternStatisticsSafe = data => {
+            if (!Array.isArray(data) || !data.length) return [];
+            return scanCandlestickPatterns(data).map(p => {
+                const entry = Number(data[p.endIndex]?.close) || 0;
+                const context = p.context || {};
+                const result = {
+                    ...p,
+                    time: data[p.endIndex]?.time ?? 'N/A',
+                    entry,
+                    rsi: Number(data[p.endIndex]?.rsi) || 0,
+                    macd: Number(data[p.endIndex]?.macd) || 0,
+                    volumeRatio: Number.isFinite(context.volumeRatio) ? context.volumeRatio : null,
+                    returns: {},
+                    completed: false,
+                    move: null,
+                    directionAdjusted: null
+                };
+                [1, 3, 5].forEach(horizon => {
+                    const futureClose = Number(data[p.endIndex + horizon]?.close);
+                    if (entry > 0 && Number.isFinite(futureClose)) {
+                        result.returns[horizon] = ((futureClose - entry) / entry) * 100;
+                    }
+                });
+                if (Object.prototype.hasOwnProperty.call(result.returns, 5)) {
+                    result.move = result.returns[5];
+                    result.directionAdjusted = p.type === 'BEARISH' ? -result.move : result.move;
+                    result.completed = true;
+                }
+                return result;
+            });
+        };
         const getPatternStatistics = data => getPatternStatisticsSafe(data);
         const getPatternStatisticsSafe = data => {
             if (!Array.isArray(data) || !data.length) return [];
@@ -958,9 +1154,9 @@
                                 <g transform={`translate(${widthDimension - 140}, 15)`}>
                                     <rect x="0" y="0" width="130" height="36" fill="#09090b" stroke="#18181b" strokeWidth="1" rx="3" opacity="0.9"/>
                                     <circle cx="12" cy="12" r="4" fill="#00FF66" />
-                                    <text x="24" y="15" fill="#a1a1aa" fontSize="8" fontFamily="monospace" fontWeight="bold">BULLISH REVERSAL</text>
+                                    <text x="24" y="15" fill="#a1a1aa" fontSize="8" fontFamily="monospace" fontWeight="bold">BULLISH / REVERSAL</text>
                                     <circle cx="12" cy="24" r="4" fill="#ef4444" />
-                                    <text x="24" y="27" fill="#a1a1aa" fontSize="8" fontFamily="monospace" fontWeight="bold">BEARISH REVERSAL</text>
+                                    <text x="24" y="27" fill="#a1a1aa" fontSize="8" fontFamily="monospace" fontWeight="bold">BEARISH / REVERSAL</text>
                                 </g>
                             )}
 
@@ -1034,6 +1230,7 @@
             };
             const fmt = v => Number.isFinite(v) ? `${v >= 0 ? '+' : ''}${v.toFixed(2)}%` : '—';
             const fmtRatio = v => Number.isFinite(v) && v > 0 ? `${v.toFixed(2)}x` : '—';
+            const fmtBody = v => Number.isFinite(v) ? `${(v * 100).toFixed(0)}%` : '—';
             const grouped = [...new Set(rows.map(r => r.label))].map(label => {
                 const items = completed.filter(r => r.label === label);
                 const sample = rows.filter(r => r.label === label).length;
@@ -1043,12 +1240,13 @@
             const mutedClass = theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500';
             const rowClass = theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200';
             const detailRows = [...completed].reverse();
+            const testPassed = CANDLE_PATTERN_TEST_RESULTS.filter(t => t.passed).length;
 
             return (
                 <div class={`mx-6 mb-4 p-4 border rounded-sm font-mono ${panelClass}`}>
                     <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
                         <div class={`text-[10px] font-bold tracking-wider ${mutedClass}`}>PATTERN LAB // HISTORICAL EVENT STUDY</div>
-                        <div class={`text-[9px] ${mutedClass}`}>Forward returns from the pattern candle close</div>
+                        <div class={`text-[9px] ${mutedClass}`}>Detector tests: <strong class={testPassed === CANDLE_PATTERN_TEST_RESULTS.length ? 'text-[#00FF66]' : 'text-red-500'}>{testPassed}/{CANDLE_PATTERN_TEST_RESULTS.length}</strong></div>
                     </div>
 
                     <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-[10px] mb-4">
@@ -1087,13 +1285,14 @@
                             <div class={`text-[8px] ${mutedClass}`}>Most recent first · completed 5-candle observations only</div>
                         </div>
                         <div class="overflow-x-auto max-h-72 overflow-y-auto">
-                            <table class="w-full text-[9px] min-w-[820px]">
+                            <table class="w-full text-[9px] min-w-[1100px]">
                                 <thead class={theme === 'dark' ? 'bg-zinc-950' : 'bg-white'}>
                                     <tr class={`border-b ${rowClass} ${mutedClass}`}>
                                         <th class="text-left py-2 pr-3 sticky top-0">PATTERN</th>
                                         <th class="text-left py-2 px-2 sticky top-0">TIME</th>
                                         <th class="text-right py-2 px-2 sticky top-0">ENTRY</th>
-                                        <th class="text-right py-2 px-2 sticky top-0">RSI</th>
+                                        <th class="text-right py-2 px-2 sticky top-0">TREND</th>
+                                        <th class="text-right py-2 px-2 sticky top-0">BODY</th>
                                         <th class="text-right py-2 px-2 sticky top-0">VOL</th>
                                         <th class="text-right py-2 px-2 sticky top-0">+1 BAR</th>
                                         <th class="text-right py-2 px-2 sticky top-0">+3 BAR</th>
@@ -1107,6 +1306,7 @@
                                         const five = r.returns?.[5];
                                         const adjusted = v => r.type === 'BEARISH' && Number.isFinite(v) ? -v : v;
                                         const returnClass = v => adjusted(v) > 0 ? 'text-[#00FF66]' : adjusted(v) < 0 ? 'text-red-500' : '';
+                                        const context = r.context || {};
                                         return (
                                             <tr key={`${r.label}-${r.endIndex}-${i}`} class={`border-b ${rowClass}`}>
                                                 <td class="py-2 pr-3 font-bold">
@@ -1114,24 +1314,24 @@
                                                 </td>
                                                 <td class="px-2">{r.time}</td>
                                                 <td class="text-right px-2">NaN</td>
-                                                <td class="text-right px-2">{Number(r.rsi).toFixed(1)}</td>
+                                                <td class="text-right px-2">{context.priorTrend || '—'}</td>
+                                                <td class="text-right px-2">{fmtBody(context.bodyPct)}</td>
                                                 <td class="text-right px-2">{fmtRatio(r.volumeRatio)}</td>
                                                 <td class={`text-right px-2 ${returnClass(one)}`}>{fmt(adjusted(one))}</td>
                                                 <td class={`text-right px-2 ${returnClass(three)}`}>{fmt(adjusted(three))}</td>
                                                 <td class={`text-right px-2 font-bold ${returnClass(five)}`}>{fmt(adjusted(five))}</td>
                                             </tr>
                                         );
-                                    }) : <tr><td colSpan="8" class={`py-3 italic ${mutedClass}`}>No completed pattern occurrences in the current dataset.</td></tr>}
+                                    }) : <tr><td colSpan="9" class={`py-3 italic ${mutedClass}`}>No completed pattern occurrences in the current dataset.</td></tr>}
                                 </tbody>
                             </table>
                         </div>
                     </div>
 
                     <div class={`mt-4 text-[9px] leading-relaxed ${mutedClass}`}>
-                        <strong>Method:</strong> each pattern is evaluated at its closing price using forward 1-, 3- and 5-candle price returns.
-                        The summary uses completed 5-candle observations. For bearish patterns, returns are direction-adjusted so a falling price is positive.
-                        Volume is shown as current volume divided by the 20-candle average when available. Results exclude fees, slippage, dividends,
-                        position sizing and stop-loss rules. These are historical observations, not forecasts.
+                        <strong>Method:</strong> reversal patterns require a prior 3-candle trend measured before the signal candle. Hammer/shooting-star geometry uses a maximum 35% body/range, a shadow at least 2× the body and the opposite shadow at most 35% of the body.
+                        Engulfing patterns use real-body containment. Marubozu requires at least 90% body/range, shadows ≤5% of range and body ≥0.6× prior ATR. Volume is contextual only: current volume / prior 14-candle average; ≥1.10× is labeled volume support.
+                        Forward returns are measured from the pattern close at +1, +3 and +5 candles. These are historical observations, not forecasts.
                     </div>
 
                     {open.length > 0 && <div class={`mt-3 pt-3 border-t ${rowClass}`}>
