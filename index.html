@@ -33,6 +33,15 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #00FF66;
         }
+        .light-theme ::-webkit-scrollbar-track {
+            background: #e5e7eb;
+        }
+        .light-theme ::-webkit-scrollbar-thumb {
+            background: #9ca3af;
+        }
+        .light-theme ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
     </style>
 </head>
 <body class="selection:bg-[#00FF66] selection:text-black antialiased">
@@ -325,7 +334,12 @@
 
             React.useEffect(() => {
                 localStorage.setItem('matrix_theme', theme);
-                document.body.style.backgroundColor = theme === 'dark' ? '#050505' : '#f8f9fa';
+                document.body.style.backgroundColor = theme === 'dark' ? '#050505' : '#f0f2f5';
+                if (theme === 'light') {
+                    document.body.classList.add('light-theme');
+                } else {
+                    document.body.classList.remove('light-theme');
+                }
             }, [theme]);
 
             React.useEffect(() => {
@@ -559,35 +573,35 @@
                 : generateFinancials(activeStock, activeLiveCap);
 
             return (
-                <div class={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${theme === 'dark' ? 'bg-[#050505] text-zinc-400' : 'bg-[#f8f9fa] text-zinc-600'}`}>
+                <div class={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${theme === 'dark' ? 'bg-[#050505] text-zinc-400' : 'bg-[#f0f2f5] text-zinc-600'}`}>
                     
                     <div class="h-[2px] w-full bg-zinc-950 relative z-50">
                         <div class={`h-full transition-all duration-300 ${apiKey ? 'bg-[#00FF66]' : 'bg-blue-500'}`} style={{ width: `${syncProgress}%` }}></div>
                     </div>
 
-                    <header class={`border-b px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-40 backdrop-blur-md ${theme === 'dark' ? 'border-zinc-900 bg-zinc-950/80' : 'border-zinc-200 bg-white/80'}`}>
+                    <header class={`border-b px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-40 backdrop-blur-md ${theme === 'dark' ? 'border-zinc-900 bg-zinc-950/80' : 'border-zinc-200 bg-white/90'}`}>
                         <div class="flex items-center space-x-4">
                             <div class="bg-[#00FF66]/10 text-[#00FF66] px-3 py-1 text-[10px] font-mono font-bold tracking-widest rounded-sm border border-[#00FF66]/30">
                                 QUANT_CORE // ENGINE
                             </div>
-                            <h1 class={`text-sm font-bold tracking-wider font-mono uppercase ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
+                            <h1 class={`text-sm font-bold tracking-wider font-mono uppercase ${theme === 'dark' ? 'text-white' : 'text-zinc-800'}`}>
                                 Terminal // <span class="text-zinc-500 font-normal">DataStream Alpha</span>
                             </h1>
                         </div>
 
                         <div class="flex items-center space-x-3">
-                            <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} class={`min-h-[38px] px-3 rounded-md font-mono text-xs font-bold flex items-center space-x-2 border transition-all cursor-pointer ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700' : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50'}`}>
+                            <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} class={`min-h-[38px] px-3 rounded-md font-mono text-xs font-bold flex items-center space-x-2 border transition-all cursor-pointer ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700' : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-100'}`}>
                                 {theme === 'dark' ? <Icons.Sun /> : <Icons.Moon />}
                             </button>
 
-                            <button onClick={() => setShowApiInput(!showApiInput)} class={`min-h-[38px] px-3 rounded-md border text-xs flex items-center space-x-2 font-mono transition-all cursor-pointer ${apiKey ? 'border-[#00FF66]/40 text-[#00FF66]' : 'border-zinc-700 text-zinc-500'}`}>
+                            <button onClick={() => setShowApiInput(!showApiInput)} class={`min-h-[38px] px-3 rounded-md border text-xs flex items-center space-x-2 font-mono transition-all cursor-pointer ${apiKey ? 'border-[#00FF66]/40 text-[#00FF66]' : theme === 'dark' ? 'border-zinc-700 text-zinc-500' : 'border-zinc-300 text-zinc-500'}`}>
                                 <Icons.Key />
                                 <span class="hidden sm:inline font-bold">{apiKey ? 'LIVE CONNECTOR' : 'TWELVEDATA API'}</span>
                             </button>
                         </div>
                     </header>
 
-                    <div class={`px-6 py-2 border-b text-[10px] font-mono flex items-center justify-between tracking-wider ${apiKey ? 'bg-emerald-900/10 text-emerald-500 border-emerald-950' : 'bg-zinc-900/40 text-zinc-500 border-zinc-900'}`}>
+                    <div class={`px-6 py-2 border-b text-[10px] font-mono flex items-center justify-between tracking-wider ${apiKey ? 'bg-emerald-900/10 text-emerald-500 border-emerald-950' : theme === 'dark' ? 'bg-zinc-900/40 text-zinc-500 border-zinc-900' : 'bg-zinc-100 text-zinc-500 border-zinc-200'}`}>
                         <div class="flex items-center space-x-2">
                             <span class="animate-pulse">●</span>
                             <span>{syncStatusText} // {marketTelemetry.text}</span>
@@ -600,7 +614,7 @@
                             <div class="max-w-xl mx-auto space-y-2">
                                 <h3 class="text-xs font-mono font-bold uppercase tracking-wider text-zinc-400">TwelveData Production API Socket</h3>
                                 <div class="flex gap-2">
-                                    <input type="password" placeholder="ENTER TWELVEDATA API VALUE..." id="api_input_field" defaultValue={apiKey} class="flex-1 bg-zinc-900 border border-zinc-800 text-[#00FF66] placeholder-zinc-600 rounded-md px-3 text-xs font-mono h-10 focus:outline-hidden" />
+                                    <input type="password" placeholder="ENTER TWELVEDATA API VALUE..." id="api_input_field" defaultValue={apiKey} class={`flex-1 border rounded-md px-3 text-xs font-mono h-10 focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-[#00FF66] placeholder-zinc-600' : 'bg-zinc-50 border-zinc-300 text-[#00FF66] placeholder-zinc-400'}`} />
                                     <button onClick={() => {
                                         const keyVal = document.getElementById('api_input_field').value.trim();
                                         setApiKey(keyVal);
@@ -615,18 +629,18 @@
 
                     <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-0 relative">
                         
-                        <aside class={`lg:col-span-3 border-r flex flex-col ${theme === 'dark' ? 'border-zinc-900 bg-[#070708]' : 'border-zinc-200 bg-zinc-50'}`}>
-                            <div class="p-4 border-b border-zinc-900">
+                        <aside class={`lg:col-span-3 border-r flex flex-col ${theme === 'dark' ? 'border-zinc-900 bg-[#070708]' : 'border-zinc-200 bg-zinc-100'}`}>
+                            <div class={`p-4 border-b ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>
                                 <div class="relative">
-                                    <input type="text" value={searchQuery} onChange={executeSearchEngine} placeholder="SCAN CORE EXCHANGE INDEX..." class="w-full bg-zinc-900 border border-zinc-800 text-white placeholder-zinc-600 rounded-md pl-10 pr-4 py-2 text-xs font-mono uppercase focus:outline-hidden" />
-                                    <span class="absolute left-3 top-2.5 text-zinc-600"><Icons.Search /></span>
+                                    <input type="text" value={searchQuery} onChange={executeSearchEngine} placeholder="SCAN CORE EXCHANGE INDEX..." class={`w-full border rounded-md pl-10 pr-4 py-2 text-xs font-mono uppercase focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-white placeholder-zinc-600' : 'bg-white border-zinc-300 text-zinc-800 placeholder-zinc-400'}`} />
+                                    <span class={`absolute left-3 top-2.5 ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}><Icons.Search /></span>
                                 </div>
 
                                 {suggestions.length > 0 && (
-                                    <div class="absolute left-4 right-4 mt-1 bg-zinc-950 border border-zinc-800 rounded-md shadow-2xl divide-y divide-zinc-900 z-50">
+                                    <div class={`absolute left-4 right-4 mt-1 border rounded-md shadow-2xl divide-y z-50 ${theme === 'dark' ? 'bg-zinc-950 border-zinc-800 divide-zinc-900' : 'bg-white border-zinc-200 divide-zinc-100'}`}>
                                         {suggestions.map(s => (
-                                            <div key={s.ticker} onClick={() => selectEngineNode(s)} class="p-3 flex justify-between items-center hover:bg-zinc-900 cursor-pointer text-xs font-mono">
-                                                <span class="text-white font-bold">{s.ticker} <span class="text-[9px] text-zinc-600">({s.exchange})</span></span>
+                                            <div key={s.ticker} onClick={() => selectEngineNode(s)} class={`p-3 flex justify-between items-center cursor-pointer text-xs font-mono ${theme === 'dark' ? 'hover:bg-zinc-900' : 'hover:bg-zinc-50'}`}>
+                                                <span class={`font-bold ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>{s.ticker} <span class="text-[9px] text-zinc-500">({s.exchange})</span></span>
                                                 <span class="text-zinc-500 truncate max-w-[150px]">{s.name}</span>
                                             </div>
                                         ))}
@@ -634,9 +648,9 @@
                                 )}
                             </div>
 
-                            <div class="p-3 bg-zinc-950/40 text-[9px] font-mono tracking-widest text-zinc-500 uppercase border-b border-zinc-900">Watchlist Matrix Grid</div>
+                            <div class={`p-3 text-[9px] font-mono tracking-widest uppercase border-b ${theme === 'dark' ? 'bg-zinc-950/40 text-zinc-500 border-zinc-900' : 'bg-zinc-100 text-zinc-400 border-zinc-200'}`}>Watchlist Matrix Grid</div>
                             
-                            <div class="flex-1 overflow-y-auto divide-y divide-zinc-900">
+                            <div class={`flex-1 overflow-y-auto divide-y ${theme === 'dark' ? 'divide-zinc-900' : 'divide-zinc-200'}`}>
                                 {watchlist.map(ticker => {
                                     const details = stockPrices[ticker] || { price: 0.00, change: 0.00, volume: 'N/A' };
                                     const isUp = details.change >= 0;
@@ -644,22 +658,22 @@
                                     const dictRef = TICKER_DICTIONARY.find(i => i.ticker === ticker);
 
                                     return (
-                                        <div key={ticker} onClick={() => setActiveStock(ticker)} class={`p-4 flex items-center justify-between cursor-pointer transition-all ${isSelected ? 'bg-zinc-900/60 border-l-2 border-[#00FF66]' : 'hover:bg-zinc-900/20'}`}>
+                                        <div key={ticker} onClick={() => setActiveStock(ticker)} class={`p-4 flex items-center justify-between cursor-pointer transition-all ${isSelected ? (theme === 'dark' ? 'bg-zinc-900/60' : 'bg-zinc-200/60') : (theme === 'dark' ? 'hover:bg-zinc-900/20' : 'hover:bg-zinc-100')} ${isSelected ? 'border-l-2 border-[#00FF66]' : ''}`}>
                                             <div>
                                                 <div class="flex items-center space-x-2 font-mono">
                                                     <span class={`text-sm font-bold ${isSelected ? 'text-[#00FF66]' : 'text-zinc-300'}`}>{ticker}</span>
-                                                    <span class="text-[8px] px-1 bg-zinc-900 border border-zinc-800 text-zinc-600 rounded-sm">{dictRef ? dictRef.exchange : 'NAS'}</span>
+                                                    <span class={`text-[8px] px-1 border rounded-sm ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-600' : 'bg-zinc-100 border-zinc-300 text-zinc-500'}`}>{dictRef ? dictRef.exchange : 'NAS'}</span>
                                                 </div>
-                                                <div class="text-[10px] text-zinc-600 font-mono">V: {details.volume}</div>
+                                                <div class={`text-[10px] font-mono ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>V: {details.volume}</div>
                                             </div>
                                             <div class="flex items-center space-x-3 font-mono text-right">
                                                 <div>
-                                                    <div class="text-xs font-bold text-zinc-200">${details.price.toFixed(2)}</div>
+                                                    <div class={`text-xs font-bold ${theme === 'dark' ? 'text-zinc-200' : 'text-zinc-800'}`}>${details.price.toFixed(2)}</div>
                                                     <div class={`text-[9px] font-bold flex items-center justify-end ${isUp ? 'text-[#00FF66]' : 'text-red-500'}`}>
                                                         {isUp ? '+' : ''}{details.change.toFixed(2)}%
                                                     </div>
                                                 </div>
-                                                <button onClick={(e) => { e.stopPropagation(); setWatchlist(watchlist.filter(w => w !== ticker)); }} class="text-zinc-700 hover:text-red-500"><Icons.Trash /></button>
+                                                <button onClick={(e) => { e.stopPropagation(); setWatchlist(watchlist.filter(w => w !== ticker)); }} class={`${theme === 'dark' ? 'text-zinc-700' : 'text-zinc-400'} hover:text-red-500`}><Icons.Trash /></button>
                                             </div>
                                         </div>
                                     );
@@ -668,12 +682,12 @@
                         </aside>
 
                         <main class={`lg:col-span-6 flex flex-col overflow-hidden transition-all duration-300 ${isMaximized ? 'fixed inset-0 z-50 bg-[#050505] p-6' : ''} ${theme === 'dark' ? 'border-zinc-900 bg-zinc-950/20' : 'border-zinc-200 bg-white'}`}>
-                            <div class="px-6 py-3 border-b border-zinc-900 flex flex-wrap items-center justify-between bg-zinc-950/40 gap-y-2 relative z-10">
+                            <div class={`px-6 py-3 border-b flex flex-wrap items-center justify-between gap-y-2 relative z-10 ${theme === 'dark' ? 'border-zinc-900 bg-zinc-950/40' : 'border-zinc-200 bg-zinc-50'}`}>
                                 <div class="flex items-center space-x-4">
-                                    <span class="text-[10px] font-mono font-bold text-zinc-600 tracking-wider">TIMEFRAME</span>
-                                    <div class="flex bg-zinc-950 p-0.5 rounded-sm border border-zinc-900">
+                                    <span class={`text-[10px] font-mono font-bold tracking-wider ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>TIMEFRAME</span>
+                                    <div class={`flex p-0.5 rounded-sm border ${theme === 'dark' ? 'bg-zinc-950 border-zinc-900' : 'bg-zinc-100 border-zinc-200'}`}>
                                         {['1D', '1W', '1M', '1Y'].map(t => (
-                                            <button key={t} onClick={() => setTimeframe(t)} class={`px-2 py-1 text-[9px] font-mono font-bold transition-all rounded-xs cursor-pointer ${timeframe === t ? 'bg-[#00FF66] text-black' : 'text-zinc-600 hover:text-zinc-400'}`}>{t}</button>
+                                            <button key={t} onClick={() => setTimeframe(t)} class={`px-2 py-1 text-[9px] font-mono font-bold transition-all rounded-xs cursor-pointer ${timeframe === t ? 'bg-[#00FF66] text-black' : `${theme === 'dark' ? 'text-zinc-600 hover:text-zinc-400' : 'text-zinc-500 hover:text-zinc-700'}`}`}>{t}</button>
                                         ))}
                                     </div>
                                 </div>
@@ -681,25 +695,25 @@
                                 <div class="flex items-center space-x-4">
                                     <button 
                                         onClick={() => setShowPatterns(!showPatterns)} 
-                                        class={`px-3 py-1 text-[9px] font-mono font-bold border rounded-xs transition-all flex items-center space-x-1.5 cursor-pointer ${showPatterns ? 'bg-emerald-900/20 border-[#00FF66] text-[#00FF66]' : 'bg-zinc-900/40 border-zinc-800 text-zinc-500'}`}
+                                        class={`px-3 py-1 text-[9px] font-mono font-bold border rounded-xs transition-all flex items-center space-x-1.5 cursor-pointer ${showPatterns ? 'bg-emerald-900/20 border-[#00FF66] text-[#00FF66]' : theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800 text-zinc-500' : 'bg-zinc-100 border-zinc-300 text-zinc-500'}`}
                                     >
                                         <Icons.Eye />
                                         <span>CANDLESTICK PATTERNS: {showPatterns ? 'ON' : 'OFF'}</span>
                                     </button>
 
-                                    <button onClick={() => setShowPatternLab(!showPatternLab)} class={`px-3 py-1 text-[9px] font-mono font-bold border rounded-xs cursor-pointer ${showPatternLab ? 'border-blue-500 text-blue-400' : 'border-zinc-800 text-zinc-500'}`}>PATTERN LAB</button>
+                                    <button onClick={() => setShowPatternLab(!showPatternLab)} class={`px-3 py-1 text-[9px] font-mono font-bold border rounded-xs cursor-pointer ${showPatternLab ? 'border-blue-500 text-blue-400' : theme === 'dark' ? 'border-zinc-800 text-zinc-500' : 'border-zinc-300 text-zinc-500'}`}>PATTERN LAB</button>
 
-                                    <button onClick={() => setIsMaximized(!isMaximized)} class="text-zinc-600 hover:text-zinc-400 cursor-pointer">
+                                    <button onClick={() => setIsMaximized(!isMaximized)} class={`${theme === 'dark' ? 'text-zinc-600 hover:text-zinc-400' : 'text-zinc-400 hover:text-zinc-600'} cursor-pointer`}>
                                         {isMaximized ? <Icons.Minimize /> : <Icons.Maximize />}
                                     </button>
                                 </div>
                             </div>
 
                             <div class="flex-1 p-6 flex flex-col justify-between overflow-hidden relative z-10">
-                                <div class="flex items-center justify-between border-b border-zinc-900 pb-4">
-                                    <h2 class="text-xl font-bold font-mono tracking-wider text-white">
+                                <div class={`flex items-center justify-between border-b pb-4 ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>
+                                    <h2 class={`text-xl font-bold font-mono tracking-wider ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
                                         {activeStock}
-                                        <span class="text-xs text-zinc-600 font-normal ml-2">// {activeCompanyMeta.name}</span>
+                                        <span class={`text-xs font-normal ml-2 ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>// {activeCompanyMeta.name}</span>
                                     </h2>
                                     <div class="text-xl font-bold font-mono text-[#00FF66] bg-[#00FF66]/5 border border-[#00FF66]/20 px-3 py-1 rounded-sm">
                                         ${stockPrices[activeStock] ? stockPrices[activeStock].price.toFixed(2) : '0.00'}
@@ -710,12 +724,12 @@
                                     <CandlestickChart vectorData={renderedChartData} theme={theme} showPatterns={showPatterns} />
                                 </div>
                             </div>
-                            {showPatternLab && <PatternLab data={renderedChartData} />}
+                            {showPatternLab && <PatternLab data={renderedChartData} theme={theme} />}
                         </main>
 
-                        <aside class="lg:col-span-3 flex flex-col overflow-y-auto bg-[#070708] divide-y divide-zinc-900">
+                        <aside class={`lg:col-span-3 flex flex-col overflow-y-auto divide-y ${theme === 'dark' ? 'bg-[#070708] divide-zinc-900' : 'bg-zinc-50 divide-zinc-200'}`}>
                             <div class="p-6 space-y-4">
-                                <h3 class="text-[10px] font-mono font-bold text-zinc-600 tracking-widest uppercase">QUANTITATIVE DATA MATRIX</h3>
+                                <h3 class={`text-[10px] font-mono font-bold tracking-widest uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>QUANTITATIVE DATA MATRIX</h3>
                                 <div class="grid grid-cols-2 gap-3">
                                     {[
                                         { label: 'MARKET CAP', value: stockPrices[activeStock] ? stockPrices[activeStock].cap : activeCompanyMeta.cap },
@@ -723,64 +737,64 @@
                                         { label: `WINDOW LOW (${timeframe})`, value: windowLow ? `$${windowLow.toFixed(2)}` : 'N/A' },
                                         { label: `WINDOW HIGH (${timeframe})`, value: windowHigh ? `$${windowHigh.toFixed(2)}` : 'N/A' }
                                     ].map((m, idx) => (
-                                        <div key={idx} class="bg-[#0b0b0c] border border-zinc-900 rounded-sm p-3 font-mono">
-                                            <div class="text-[8px] text-zinc-600 tracking-widest uppercase">{m.label}</div>
-                                            <div class="text-xs font-bold text-zinc-300 mt-1">{m.value}</div>
+                                        <div key={idx} class={`border rounded-sm p-3 font-mono ${theme === 'dark' ? 'bg-[#0b0b0c] border-zinc-900' : 'bg-white border-zinc-200'}`}>
+                                            <div class={`text-[8px] tracking-widest uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>{m.label}</div>
+                                            <div class={`text-xs font-bold mt-1 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>{m.value}</div>
                                         </div>
                                     ))}
                                 </div>
                             </div>
 
-                            <div class="p-6 space-y-3 border-b border-zinc-900">
-                                <div class="flex items-center justify-between"><h3 class="text-[10px] font-mono font-bold text-zinc-600 tracking-widest">PRICE ALERTS</h3><button onClick={() => setPriceAlerts([...priceAlerts,{id:Date.now(),ticker:activeStock,target:Number((stockPrices[activeStock]?.price||0).toFixed(2)),direction:'ABOVE'}])} class="text-[9px] font-mono text-[#00FF66]">+ ADD</button></div>
-                                {priceAlerts.filter(a=>a.ticker===activeStock).map(a=><div key={a.id} class="flex justify-between text-[10px] font-mono bg-zinc-950 border border-zinc-900 p-2"><span>{a.direction} ${a.target.toFixed(2)}</span><button onClick={()=>setPriceAlerts(priceAlerts.filter(x=>x.id!==a.id))} class="text-red-500">REMOVE</button></div>)}
+                            <div class={`p-6 space-y-3 border-b ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>
+                                <div class="flex items-center justify-between"><h3 class={`text-[10px] font-mono font-bold tracking-widest ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>PRICE ALERTS</h3><button onClick={() => setPriceAlerts([...priceAlerts,{id:Date.now(),ticker:activeStock,target:Number((stockPrices[activeStock]?.price||0).toFixed(2)),direction:'ABOVE'}])} class="text-[9px] font-mono text-[#00FF66]">+ ADD</button></div>
+                                {priceAlerts.filter(a=>a.ticker===activeStock).map(a=><div key={a.id} class={`flex justify-between text-[10px] font-mono p-2 ${theme === 'dark' ? 'bg-zinc-950 border border-zinc-900' : 'bg-white border border-zinc-200'}`}><span class={theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}>{a.direction} ${a.target.toFixed(2)}</span><button onClick={()=>setPriceAlerts(priceAlerts.filter(x=>x.id!==a.id))} class="text-red-500">REMOVE</button></div>)}
                             </div>
                             <div class="p-6 space-y-4 flex-1 flex flex-col">
                                 <div class="flex items-center justify-between">
-                                    <h3 class="text-[10px] font-mono font-bold text-zinc-600 tracking-widest uppercase">FINANCIAL STATEMENTS</h3>
-                                    <div class="flex bg-zinc-950 border border-zinc-900 p-0.5 rounded-sm">
+                                    <h3 class={`text-[10px] font-mono font-bold tracking-widest uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>FINANCIAL STATEMENTS</h3>
+                                    <div class={`flex border p-0.5 rounded-sm ${theme === 'dark' ? 'bg-zinc-950 border-zinc-900' : 'bg-zinc-100 border-zinc-200'}`}>
                                         {['annual', 'quarter'].map(mode => (
-                                            <button key={mode} onClick={() => setFinancialView(mode)} class={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-xs uppercase cursor-pointer ${financialView === mode ? 'bg-[#00FF66] text-black' : 'text-zinc-600'}`}>{mode.slice(0, 4)}</button>
+                                            <button key={mode} onClick={() => setFinancialView(mode)} class={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-xs uppercase cursor-pointer ${financialView === mode ? 'bg-[#00FF66] text-black' : theme === 'dark' ? 'text-zinc-600' : 'text-zinc-500'}`}>{mode.slice(0, 4)}</button>
                                         ))}
                                     </div>
                                 </div>
 
                                 <div class="space-y-4 flex-1 justify-around pt-2">
                                     <div>
-                                        <div class="text-[9px] font-mono text-zinc-600 mb-2 tracking-wider uppercase">Performance Metrics (REV vs NET)</div>
+                                        <div class={`text-[9px] font-mono mb-2 tracking-wider uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>Performance Metrics (REV vs NET)</div>
                                         <div class="space-y-2">
                                             {activeFinancialsData[financialView]?.performance && activeFinancialsData[financialView].performance.length > 0 ? (
                                                 activeFinancialsData[financialView].performance.map((item, i) => {
                                                     const maxRev = Math.max(...activeFinancialsData[financialView].performance.map(p => p.revenue || 1));
                                                     return (
                                                         <div key={i} class="font-mono text-[10px] space-y-1">
-                                                            <div class="text-zinc-600 flex justify-between">
+                                                            <div class={`flex justify-between ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-500'}`}>
                                                                 <span>{item.period}</span>
-                                                                <span class="text-[9px] text-zinc-500">R: {item.revenue}B / N: {item.netIncome}B</span>
+                                                                <span class={`text-[9px] ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>R: {item.revenue}B / N: {item.netIncome}B</span>
                                                             </div>
-                                                            <div class="w-full bg-zinc-900 h-1.5 rounded-xs overflow-hidden relative">
+                                                            <div class={`w-full h-1.5 rounded-xs overflow-hidden relative ${theme === 'dark' ? 'bg-zinc-900' : 'bg-zinc-200'}`}>
                                                                 <div class="bg-blue-600 h-full absolute top-0 left-0" style={{ width: `${(item.revenue/maxRev)*100}%` }}></div>
                                                             </div>
-                                                            <div class="w-full bg-zinc-900 h-1 rounded-xs overflow-hidden relative">
+                                                            <div class={`w-full h-1 rounded-xs overflow-hidden relative ${theme === 'dark' ? 'bg-zinc-900' : 'bg-zinc-200'}`}>
                                                                 <div class="bg-[#00FF66] h-full absolute top-0 left-0" style={{ width: `${(item.netIncome/maxRev)*100}%` }}></div>
                                                             </div>
                                                         </div>
                                                     );
                                                 })
                                             ) : (
-                                                <div class="text-[10px] font-mono text-zinc-600 italic">No historical data segments loaded.</div>
+                                                <div class={`text-[10px] font-mono italic ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>No historical data segments loaded.</div>
                                             )}
                                         </div>
                                     </div>
 
                                     <div>
-                                        <div class="text-[9px] font-mono text-zinc-600 mb-2 tracking-wider uppercase">EPS Forecast Vectors</div>
+                                        <div class={`text-[9px] font-mono mb-2 tracking-wider uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>EPS Forecast Vectors</div>
                                         <div class="space-y-2">
                                             {activeFinancialsData[financialView]?.earnings.map((item, i) => (
-                                                <div key={i} class="font-mono text-[10px] flex justify-between items-center bg-zinc-950 p-2 border border-zinc-900 rounded-sm">
-                                                    <span class="text-zinc-500 font-bold">{item.period}</span>
-                                                    <span class="text-zinc-400">ACT: <strong class="text-amber-500">${item.actual}</strong></span>
-                                                    <span class="text-zinc-600">EST: ${item.forecast}</span>
+                                                <div key={i} class={`font-mono text-[10px] flex justify-between items-center p-2 rounded-sm ${theme === 'dark' ? 'bg-zinc-950 border border-zinc-900' : 'bg-white border border-zinc-200'}`}>
+                                                    <span class={`font-bold ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500'}`}>{item.period}</span>
+                                                    <span class={theme === 'dark' ? 'text-zinc-400' : 'text-zinc-600'}>ACT: <strong class="text-amber-500">${item.actual}</strong></span>
+                                                    <span class={theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}>EST: ${item.forecast}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -975,10 +989,10 @@
             );
         }
 
-        function PatternLab({data}) {
+        function PatternLab({data, theme}) {
             const rows=getPatternStatisticsSafe(data), bull=rows.filter(r=>r.type==='BULLISH'), bear=rows.filter(r=>r.type==='BEARISH');
             const rate=items=>items.length?(items.filter(r=>r.directionAdjusted>0).length/items.length*100).toFixed(1):'0.0';
-            return <div class="mx-6 mb-4 p-4 border border-zinc-900 bg-zinc-950/70 rounded-sm font-mono"><div class="text-[10px] text-zinc-500 mb-3">PATTERN PERFORMANCE LAB // 5-CANDLE OBSERVATION</div><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]"><div class="border border-zinc-900 p-2">BULLISH <strong class="text-[#00FF66]">{bull.length}</strong></div><div class="border border-zinc-900 p-2">BULL WIN {rate(bull)}%</div><div class="border border-zinc-900 p-2">BEARISH <strong class="text-red-500">{bear.length}</strong></div><div class="border border-zinc-900 p-2">BEAR WIN {rate(bear)}%</div></div><div class="mt-3 text-[9px] text-zinc-600">Illustrative observations; not a trading guarantee.</div></div>;
+            return <div class={`mx-6 mb-4 p-4 border rounded-sm font-mono ${theme === 'dark' ? 'border-zinc-900 bg-zinc-950/70' : 'border-zinc-200 bg-white'}`}><div class={`text-[10px] mb-3 ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>PATTERN PERFORMANCE LAB // 5-CANDLE OBSERVATION</div><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]"><div class={`border p-2 ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>BULLISH <strong class="text-[#00FF66]">{bull.length}</strong></div><div class={`border p-2 ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>BULL WIN {rate(bull)}%</div><div class={`border p-2 ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>BEARISH <strong class="text-red-500">{bear.length}</strong></div><div class={`border p-2 ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>BEAR WIN {rate(bear)}%</div></div><div class={`mt-3 text-[9px] ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>Illustrative observations; not a trading guarantee.</div></div>;
         }
 
         const appRoot = ReactDOM.createRoot(document.getElementById('root'));
