@@ -275,11 +275,35 @@
         };
 
         const getPatternStatistics = data => getPatternStatisticsSafe(data);
-        const getPatternStatisticsSafe = data => scanCandlestickPatterns(data).map(p => {
-            const entry=data[p.endIndex]?.close||0, future=data[Math.min(data.length-1,p.endIndex+5)]?.close||entry;
-            const move=entry?((future-entry)/entry)*100:0;
-            return {...p,move,directionAdjusted:p.type==='BEARISH'?-move:move};
-        });
+        const getPatternStatisticsSafe = data => {
+            if (!Array.isArray(data) || !data.length) return [];
+            return scanCandlestickPatterns(data).map(p => {
+                const entry = Number(data[p.endIndex]?.close) || 0;
+                const result = {
+                    ...p,
+                    time: data[p.endIndex]?.time ?? 'N/A',
+                    entry,
+                    rsi: Number(data[p.endIndex]?.rsi) || 0,
+                    macd: Number(data[p.endIndex]?.macd) || 0,
+                    returns: {},
+                    completed: false,
+                    move: null,
+                    directionAdjusted: null
+                };
+                [1, 3, 5].forEach(horizon => {
+                    const futureClose = Number(data[p.endIndex + horizon]?.close);
+                    if (entry > 0 && Number.isFinite(futureClose)) {
+                        result.returns[horizon] = ((futureClose - entry) / entry) * 100;
+                    }
+                });
+                if (Object.prototype.hasOwnProperty.call(result.returns, 5)) {
+                    result.move = result.returns[5];
+                    result.directionAdjusted = p.type === 'BEARISH' ? -result.move : result.move;
+                    result.completed = true;
+                }
+                return result;
+            });
+        };
         function Dashboard() {
             const [theme, setTheme] = React.useState(() => localStorage.getItem('matrix_theme') || 'dark');
             const [watchlist, setWatchlist] = React.useState(() => {
@@ -997,9 +1021,78 @@
         }
 
         function PatternLab({data, theme}) {
-            const rows=getPatternStatisticsSafe(data), bull=rows.filter(r=>r.type==='BULLISH'), bear=rows.filter(r=>r.type==='BEARISH');
-            const rate=items=>items.length?(items.filter(r=>r.directionAdjusted>0).length/items.length*100).toFixed(1):'0.0';
-            return <div class={`mx-6 mb-4 p-4 border rounded-sm font-mono ${theme === 'dark' ? 'border-zinc-900 bg-zinc-950/70' : 'border-zinc-200 bg-white'}`}><div class={`text-[10px] mb-3 ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>PATTERN PERFORMANCE LAB // 5-CANDLE OBSERVATION</div><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]"><div class={`border p-2 ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>BULLISH <strong class="text-[#00FF66]">{bull.length}</strong></div><div class={`border p-2 ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>BULL WIN {rate(bull)}%</div><div class={`border p-2 ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>BEARISH <strong class="text-red-500">{bear.length}</strong></div><div class={`border p-2 ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>BEAR WIN {rate(bear)}%</div></div><div class={`mt-3 text-[9px] ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>Illustrative observations; not a trading guarantee.</div></div>;
+            const rows = getPatternStatisticsSafe(data);
+            const completed = rows.filter(r => r.completed);
+            const open = rows.filter(r => !r.completed);
+            const avg = items => items.length ? items.reduce((s,r) => s + (r.directionAdjusted || 0),0) / items.length : 0;
+            const winRate = items => items.length ? items.filter(r => r.directionAdjusted > 0).length / items.length * 100 : 0;
+            const median = items => {
+                if (!items.length) return 0;
+                const values = items.map(r => r.directionAdjusted || 0).sort((x,y) => x-y);
+                const m = Math.floor(values.length / 2);
+                return values.length % 2 ? values[m] : (values[m-1] + values[m]) / 2;
+            };
+            const fmt = v => Number.isFinite(v) ? `${v >= 0 ? '+' : ''}${v.toFixed(2)}%` : '—';
+            const grouped = [...new Set(rows.map(r => r.label))].map(label => {
+                const items = completed.filter(r => r.label === label);
+                const sample = rows.filter(r => r.label === label).length;
+                return {label, sample, completed: items.length, win: winRate(items), avg: avg(items), median: median(items)};
+            }).sort((x,y) => y.completed - x.completed || x.label.localeCompare(y.label));
+            const panelClass = theme === 'dark' ? 'border-zinc-900 bg-zinc-950/70 text-zinc-300' : 'border-zinc-200 bg-white text-zinc-700';
+            const mutedClass = theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500';
+            const rowClass = theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200';
+            return (
+                <div class={`mx-6 mb-4 p-4 border rounded-sm font-mono ${panelClass}`}>
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                        <div class={`text-[10px] font-bold tracking-wider ${mutedClass}`}>PATTERN LAB // HISTORICAL EVENT STUDY</div>
+                        <div class={`text-[9px] ${mutedClass}`}>Forward returns from the pattern candle close</div>
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-[10px] mb-4">
+                        <div class={`border p-2 ${rowClass}`}>SIGNALS <strong>{rows.length}</strong></div>
+                        <div class={`border p-2 ${rowClass}`}>COMPLETED <strong>{completed.length}</strong></div>
+                        <div class={`border p-2 ${rowClass}`}>BULLISH <strong class="text-[#00FF66]">{completed.filter(r => r.type === 'BULLISH').length}</strong></div>
+                        <div class={`border p-2 ${rowClass}`}>BEARISH <strong class="text-red-500">{completed.filter(r => r.type === 'BEARISH').length}</strong></div>
+                        <div class={`border p-2 ${rowClass}`}>5-BAR AVG <strong>{fmt(avg(completed))}</strong></div>
+                    </div>
+                    <div class={`text-[9px] uppercase tracking-wider mb-2 ${mutedClass}`}>Pattern results</div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-[9px] min-w-[620px]">
+                            <thead><tr class={`border-b ${rowClass} ${mutedClass}`}>
+                                <th class="text-left py-2 pr-3">PATTERN</th><th class="text-right py-2 px-2">N</th>
+                                <th class="text-right py-2 px-2">5-BAR WIN</th><th class="text-right py-2 px-2">AVG 5-BAR</th>
+                                <th class="text-right py-2 px-2">MEDIAN</th>
+                            </tr></thead>
+                            <tbody>
+                                {grouped.length ? grouped.map(item => (
+                                    <tr key={item.label} class={`border-b ${rowClass}`}>
+                                        <td class="py-2 pr-3 font-bold">{item.label}</td>
+                                        <td class="text-right px-2">{item.completed}{item.sample > item.completed ? ` + ${item.sample-item.completed} open` : ''}</td>
+                                        <td class="text-right px-2">{item.completed ? `${item.win.toFixed(1)}%` : '—'}</td>
+                                        <td class={`text-right px-2 ${item.avg > 0 ? 'text-[#00FF66]' : item.avg < 0 ? 'text-red-500' : ''}`}>{fmt(item.avg)}</td>
+                                        <td class="text-right px-2">{fmt(item.median)}</td>
+                                    </tr>
+                                )) : <tr><td colSpan="5" class={`py-3 italic ${mutedClass}`}>No candlestick patterns detected in the current dataset.</td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class={`mt-4 text-[9px] leading-relaxed ${mutedClass}`}>
+                        <strong>Method:</strong> each pattern is evaluated at its closing price using forward 1-, 3- and 5-candle price returns.
+                        The table reports the completed 5-candle observations. For bearish patterns the return is direction-adjusted,
+                        so a falling price is positive. Incomplete signals are excluded from performance statistics.
+                        Results are price-only observations and exclude fees, slippage, dividends, position sizing and stop-loss rules.
+                        Historical observations are not forecasts.
+                    </div>
+                    {open.length > 0 && <div class={`mt-3 pt-3 border-t ${rowClass}`}>
+                        <div class={`text-[9px] uppercase tracking-wider mb-2 ${mutedClass}`}>Current / incomplete signals</div>
+                        <div class="flex flex-wrap gap-2">
+                            {open.map((r,i) => <div key={`${r.label}-${r.endIndex}-${i}`} class={`px-2 py-1 border rounded-sm text-[9px] ${rowClass}`}>
+                                <span class={r.type === 'BULLISH' ? 'text-[#00FF66]' : 'text-red-500'}>{r.type}</span>
+                                <span class="mx-1">·</span>{r.label}<span class={`ml-1 ${mutedClass}`}>@ {r.time}</span>
+                            </div>)}
+                        </div>
+                    </div>}
+                </div>
+            );
         }
 
         const appRoot = ReactDOM.createRoot(document.getElementById('root'));
