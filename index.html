@@ -1133,12 +1133,15 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             const widthDimension = 700;
             const heightDimension = 450;
             
-            const candleAreaHeight = heightDimension * 0.50;
-            const rsiAreaHeight = heightDimension * 0.16;
-            const macdAreaHeight = heightDimension * 0.18;
+            // Give each panel dedicated space: price remains dominant, while RSI/MACD
+            // are large enough to read without compressing their signals.
+            const panelGap = 10;
+            const candleAreaHeight = heightDimension * 0.47;
+            const rsiAreaHeight = heightDimension * 0.20;
+            const macdAreaHeight = heightDimension * 0.23;
 
-            const rsiTop = candleAreaHeight + 20;
-            const macdTop = rsiTop + rsiAreaHeight + 20;
+            const rsiTop = candleAreaHeight + panelGap;
+            const macdTop = rsiTop + rsiAreaHeight + panelGap;
             const horizontalStep = widthDimension / vectorData.length;
 
             const identifiedPatterns = showPatterns ? scanCandlestickPatterns(vectorData) : [];
