@@ -598,6 +598,13 @@
                                 <Icons.Key />
                                 <span class="hidden sm:inline font-bold">{apiKey ? 'LIVE CONNECTOR' : 'TWELVEDATA API'}</span>
                             </button>
+
+                            {apiKey && (
+                                <button onClick={() => { setApiKey(''); localStorage.removeItem('matrix_twelvedata_key'); }} class={`min-h-[38px] px-3 rounded-md border text-xs flex items-center space-x-2 font-mono transition-all cursor-pointer border-red-500/40 text-red-500`}>
+                                    <Icons.Trash />
+                                    <span class="hidden sm:inline font-bold">CLEAR API</span>
+                                </button>
+                            )}
                         </div>
                     </header>
 
