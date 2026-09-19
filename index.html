@@ -137,47 +137,61 @@
         };
 
         const calculateTechnicalIndicators = (data) => {
-            const closes = data.map(d => d.close);
-            
-            const calcEMA = (periods, values) => {
-                const k = 2 / (periods + 1);
-                let ema = [values[0] || 0];
-                for (let i = 1; i < values.length; i++) {
-                    ema.push(values[i] * k + ema[i - 1] * (1 - k));
+            if (!Array.isArray(data) || data.length === 0) return [];
+
+            const closes = data.map(d => Number(d.close) || 0);
+
+            // EMA seeded with an SMA when enough history is available.
+            const calcEMA = (period, values) => {
+                if (!values.length) return [];
+                const k = 2 / (period + 1);
+                const ema = new Array(values.length).fill(values[0] || 0);
+                const seedLength = Math.min(period, values.length);
+                let seed = values.slice(0, seedLength).reduce((sum, value) => sum + value, 0) / seedLength;
+                ema[seedLength - 1] = seed;
+                for (let i = seedLength; i < values.length; i++) {
+                    ema[i] = values[i] * k + ema[i - 1] * (1 - k);
                 }
+                for (let i = seedLength - 2; i >= 0; i--) ema[i] = values[i];
                 return ema;
             };
 
             const ema12 = calcEMA(12, closes);
             const ema26 = calcEMA(26, closes);
-            const macdLine = ema12.map((val, idx) => val - ema26[idx]);
+            const macdLine = ema12.map((value, index) => value - ema26[index]);
             const signalLine = calcEMA(9, macdLine);
 
-            let rsi = new Array(closes.length).fill(50);
+            // Wilder RSI(14), including an explicit flat-market handling case.
+            const rsi = new Array(closes.length).fill(50);
             if (closes.length > 14) {
                 let gains = 0, losses = 0;
                 for (let i = 1; i <= 14; i++) {
                     const diff = closes[i] - closes[i - 1];
-                    if (diff > 0) gains += diff; else losses -= diff;
+                    if (diff > 0) gains += diff;
+                    else losses -= diff;
                 }
                 let avgGain = gains / 14;
                 let avgLoss = losses / 14;
-                rsi[14] = avgLoss === 0 ? 100 : 100 - (100 / (1 + (avgGain / avgLoss)));
-
+                const calculateRSI = () => {
+                    if (avgLoss === 0 && avgGain === 0) return 50;
+                    if (avgLoss === 0) return 100;
+                    return 100 - (100 / (1 + (avgGain / avgLoss)));
+                };
+                rsi[14] = calculateRSI();
                 for (let i = 15; i < closes.length; i++) {
                     const diff = closes[i] - closes[i - 1];
                     avgGain = ((avgGain * 13) + (diff > 0 ? diff : 0)) / 14;
                     avgLoss = ((avgLoss * 13) + (diff < 0 ? -diff : 0)) / 14;
-                    rsi[i] = avgLoss === 0 ? 100 : 100 - (100 / (1 + (avgGain / avgLoss)));
+                    rsi[i] = calculateRSI();
                 }
             }
 
             return data.map((d, i) => ({
                 ...d,
-                macd: parseFloat((macdLine[i] || 0).toFixed(3)),
-                signal: parseFloat((signalLine[i] || 0).toFixed(3)),
-                hist: parseFloat(((macdLine[i] || 0) - (signalLine[i] || 0)).toFixed(3)),
-                rsi: parseFloat(rsi[i].toFixed(2))
+                macd: Number((macdLine[i] || 0).toFixed(3)),
+                signal: Number((signalLine[i] || 0).toFixed(3)),
+                hist: Number(((macdLine[i] || 0) - (signalLine[i] || 0)).toFixed(3)),
+                rsi: Number(rsi[i].toFixed(2))
             }));
         };
 
@@ -211,75 +225,86 @@
         };
 
         const scanCandlestickPatterns = (data) => {
-            if (!data || data.length < 3) return [];
+            if (!Array.isArray(data) || data.length < 3) return [];
+
             const segments = [];
-            let prevGrouped = false;
+            const trendLookback = 3;
+            const atrLookback = 14;
+            const average = values => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+            const trueRange = (candle, previous) => Math.max(
+                candle.high - candle.low,
+                Math.abs(candle.high - (previous?.close ?? candle.close)),
+                Math.abs(candle.low - (previous?.close ?? candle.close))
+            );
+            const atrAt = index => {
+                const start = Math.max(0, index - atrLookback + 1);
+                const ranges = [];
+                for (let j = start; j <= index; j++) ranges.push(trueRange(data[j], data[j - 1]));
+                return average(ranges) || 0.01;
+            };
+            const trendAt = index => {
+                const start = Math.max(0, index - trendLookback);
+                const change = data[index].close - data[start].close;
+                const threshold = atrAt(index) * 0.35;
+                if (change > threshold) return 'UP';
+                if (change < -threshold) return 'DOWN';
+                return 'SIDEWAYS';
+            };
+            const averageVolumeAt = index => {
+                const start = Math.max(0, index - atrLookback);
+                return average(data.slice(start, index).map(candle => Number(candle.volume) || 0));
+            };
+            const addPattern = (startIndex, endIndex, type, label, confidence = 'WATCH') => {
+                segments.push({ startIndex, endIndex, type, label, confidence });
+            };
 
             for (let i = 1; i < data.length; i++) {
                 const curr = data[i];
                 const prev = data[i - 1];
-                
                 const currBody = Math.abs(curr.close - curr.open);
-                const currRange = curr.high - curr.low || 0.01;
-                const isCurrGreen = curr.close >= curr.open;
-                
+                const currRange = Math.max(curr.high - curr.low, 0.000001);
                 const prevBody = Math.abs(prev.close - prev.open);
+                const isCurrGreen = curr.close >= curr.open;
                 const isPrevGreen = prev.close >= prev.open;
+                const trend = trendAt(i);
+                const atr = atrAt(i);
+                const volumeAverage = averageVolumeAt(i);
+                const volumeConfirmed = !volumeAverage || !curr.volume || curr.volume >= volumeAverage * 1.1;
 
-                const lowerWickHammer = isCurrGreen ? (curr.open - curr.low) : (curr.close - curr.low);
-                const upperWickHammer = isCurrGreen ? (curr.high - curr.close) : (curr.high - curr.open);
-                if (lowerWickHammer > (currBody * 1.8) && upperWickHammer < (currBody * 0.4) && currBody > 0) {
-                    segments.push({
-                        startIndex: i,
-                        endIndex: i,
-                        type: 'BULLISH',
-                        label: 'HAMMER'
-                    });
+                const lowerWick = Math.min(curr.open, curr.close) - curr.low;
+                const upperWick = curr.high - Math.max(curr.open, curr.close);
+                const body = Math.max(currBody, 0.000001);
+
+                // Reversal patterns require an opposing preceding trend.
+                if (trend === 'DOWN' && lowerWick >= body * 1.8 && upperWick <= body * 0.5 && currBody / currRange >= 0.08) {
+                    addPattern(i, i, 'BULLISH', 'HAMMER', volumeConfirmed ? 'CONFIRMED_VOLUME' : 'WATCH');
                     continue;
                 }
 
-                if (upperWickHammer > (currBody * 1.8) && lowerWickHammer < (currBody * 0.4) && currBody > 0) {
-                    segments.push({
-                        startIndex: i,
-                        endIndex: i,
-                        type: 'BEARISH',
-                        label: 'SHOOTING STAR'
-                    });
+                if (trend === 'UP' && upperWick >= body * 1.8 && lowerWick <= body * 0.5 && currBody / currRange >= 0.08) {
+                    addPattern(i, i, 'BEARISH', 'SHOOTING STAR', volumeConfirmed ? 'CONFIRMED_VOLUME' : 'WATCH');
                     continue;
                 }
 
-                if (currBody > prevBody * 1.3 && prevBody > 0) {
-                    if (!prevGrouped && isCurrGreen && !isPrevGreen && curr.close >= prev.open && curr.open <= prev.close) {
-                        segments.push({
-                            startIndex: i - 1,
-                            endIndex: i,
-                            type: 'BULLISH',
-                            label: 'BULLISH ENGULFING'
-                        });
-                        prevGrouped = true;
+                if (prevBody > 0 && currBody > prevBody * 1.1) {
+                    const bullishEngulfing = !isPrevGreen && isCurrGreen && curr.close >= prev.open && curr.open <= prev.close;
+                    const bearishEngulfing = isPrevGreen && !isCurrGreen && curr.close <= prev.open && curr.open >= prev.close;
+                    if (trend === 'DOWN' && bullishEngulfing) {
+                        addPattern(i - 1, i, 'BULLISH', 'BULLISH ENGULFING', volumeConfirmed ? 'CONFIRMED_VOLUME' : 'WATCH');
                         continue;
                     }
-                    if (!prevGrouped && !isCurrGreen && isPrevGreen && curr.close <= prev.open && curr.open >= prev.close) {
-                        segments.push({
-                            startIndex: i - 1,
-                            endIndex: i,
-                            type: 'BEARISH',
-                            label: 'BEARISH ENGULFING'
-                        });
-                        prevGrouped = true;
+                    if (trend === 'UP' && bearishEngulfing) {
+                        addPattern(i - 1, i, 'BEARISH', 'BEARISH ENGULFING', volumeConfirmed ? 'CONFIRMED_VOLUME' : 'WATCH');
                         continue;
                     }
                 }
 
-                if (currBody / currRange > 0.90 && currBody > 0.3) {
-                    segments.push({
-                        startIndex: i,
-                        endIndex: i,
-                        type: isCurrGreen ? 'BULLISH' : 'BEARISH',
-                        label: isCurrGreen ? 'BULLISH MARUBOZU' : 'BEARISH MARUBOZU'
-                    });
+                // Scale-independent Marubozu test using ATR rather than a fixed price value.
+                const bodyToRange = currBody / currRange;
+                const minimalBody = currBody >= atr * 0.6;
+                if (bodyToRange >= 0.90 && minimalBody) {
+                    addPattern(i, i, isCurrGreen ? 'BULLISH' : 'BEARISH', isCurrGreen ? 'BULLISH MARUBOZU' : 'BEARISH MARUBOZU', volumeConfirmed ? 'CONFIRMED_VOLUME' : 'WATCH');
                 }
-                prevGrouped = false;
             }
             return segments;
         };
