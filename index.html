@@ -138,61 +138,17 @@
 
         const calculateTechnicalIndicators = (data) => {
             if (!Array.isArray(data) || data.length === 0) return [];
-
-            const closes = data.map(d => Number(d.close) || 0);
-
-            // EMA seeded with an SMA when enough history is available.
-            const calcEMA = (period, values) => {
-                if (!values.length) return [];
-                const k = 2 / (period + 1);
-                const ema = new Array(values.length).fill(values[0] || 0);
-                const seedLength = Math.min(period, values.length);
-                let seed = values.slice(0, seedLength).reduce((sum, value) => sum + value, 0) / seedLength;
-                ema[seedLength - 1] = seed;
-                for (let i = seedLength; i < values.length; i++) {
-                    ema[i] = values[i] * k + ema[i - 1] * (1 - k);
-                }
-                for (let i = seedLength - 2; i >= 0; i--) ema[i] = values[i];
-                return ema;
-            };
-
-            const ema12 = calcEMA(12, closes);
-            const ema26 = calcEMA(26, closes);
-            const macdLine = ema12.map((value, index) => value - ema26[index]);
-            const signalLine = calcEMA(9, macdLine);
-
-            // Wilder RSI(14), including an explicit flat-market handling case.
-            const rsi = new Array(closes.length).fill(50);
-            if (closes.length > 14) {
-                let gains = 0, losses = 0;
-                for (let i = 1; i <= 14; i++) {
-                    const diff = closes[i] - closes[i - 1];
-                    if (diff > 0) gains += diff;
-                    else losses -= diff;
-                }
-                let avgGain = gains / 14;
-                let avgLoss = losses / 14;
-                const calculateRSI = () => {
-                    if (avgLoss === 0 && avgGain === 0) return 50;
-                    if (avgLoss === 0) return 100;
-                    return 100 - (100 / (1 + (avgGain / avgLoss)));
-                };
-                rsi[14] = calculateRSI();
-                for (let i = 15; i < closes.length; i++) {
-                    const diff = closes[i] - closes[i - 1];
-                    avgGain = ((avgGain * 13) + (diff > 0 ? diff : 0)) / 14;
-                    avgLoss = ((avgLoss * 13) + (diff < 0 ? -diff : 0)) / 14;
-                    rsi[i] = calculateRSI();
-                }
-            }
-
-            return data.map((d, i) => ({
-                ...d,
-                macd: Number((macdLine[i] || 0).toFixed(3)),
-                signal: Number((signalLine[i] || 0).toFixed(3)),
-                hist: Number(((macdLine[i] || 0) - (signalLine[i] || 0)).toFixed(3)),
-                rsi: Number(rsi[i].toFixed(2))
-            }));
+            const closes=data.map(d=>Number(d.close)||0), highs=data.map(d=>Number(d.high)||0), lows=data.map(d=>Number(d.low)||0), volumes=data.map(d=>Number(d.volume)||0);
+            const average=values=>values.length?values.reduce((a,b)=>a+b,0)/values.length:0;
+            const sma=(period,values)=>values.map((_,i)=>average(values.slice(Math.max(0,i-period+1),i+1)));
+            const calcEMA=(period,values)=>{if(!values.length)return[];const k=2/(period+1),ema=new Array(values.length).fill(values[0]||0),n=Math.min(period,values.length);ema[n-1]=average(values.slice(0,n));for(let i=n;i<values.length;i++)ema[i]=values[i]*k+ema[i-1]*(1-k);for(let i=n-2;i>=0;i--)ema[i]=values[i];return ema;};
+            const ema9=calcEMA(9,closes),ema12=calcEMA(12,closes),ema21=calcEMA(21,closes),ema26=calcEMA(26,closes),ema50=calcEMA(50,closes);
+            const macdLine=ema12.map((v,i)=>v-ema26[i]),signalLine=calcEMA(9,macdLine),rsi=new Array(closes.length).fill(50);
+            if(closes.length>14){let gains=0,losses=0;for(let i=1;i<=14;i++){const d=closes[i]-closes[i-1];if(d>0)gains+=d;else losses-=d;}let avgGain=gains/14,avgLoss=losses/14;const r=()=>avgLoss===0?(avgGain===0?50:100):100-100/(1+avgGain/avgLoss);rsi[14]=r();for(let i=15;i<closes.length;i++){const d=closes[i]-closes[i-1];avgGain=(avgGain*13+(d>0?d:0))/14;avgLoss=(avgLoss*13+(d<0?-d:0))/14;rsi[i]=r();}}
+            const tr=closes.map((_,i)=>{const pc=i?closes[i-1]:closes[i];return Math.max(highs[i]-lows[i],Math.abs(highs[i]-pc),Math.abs(lows[i]-pc));});
+            const atr=sma(14,tr),sma20=sma(20,closes),sma50=sma(50,closes),volSma=sma(20,volumes);
+            const bands=closes.map((_,i)=>{const w=closes.slice(Math.max(0,i-19),i+1),m=average(w),sd=Math.sqrt(average(w.map(v=>(v-m)**2)));return{middle:m,upper:m+2*sd,lower:m-2*sd};});
+            return data.map((d,i)=>({...d,ema9:+ema9[i].toFixed(3),ema21:+ema21[i].toFixed(3),ema50:+ema50[i].toFixed(3),sma20:+sma20[i].toFixed(3),sma50:+sma50[i].toFixed(3),bbMiddle:+bands[i].middle.toFixed(3),bbUpper:+bands[i].upper.toFixed(3),bbLower:+bands[i].lower.toFixed(3),atr:+(atr[i]||0).toFixed(3),volumeSma20:Math.round(volSma[i]||0),macd:+(macdLine[i]||0).toFixed(3),signal:+(signalLine[i]||0).toFixed(3),hist:+((macdLine[i]||0)-(signalLine[i]||0)).toFixed(3),rsi:+rsi[i].toFixed(2),trend:ema21[i]>=ema50[i]?'BULLISH':'BEARISH'}));
         };
 
         const generateForcedFakeData = (ticker, timeframe) => {
@@ -309,6 +265,12 @@
             return segments;
         };
 
+        const getPatternStatistics = data => getPatternStatisticsSafe(data);
+        const getPatternStatisticsSafe = data => scanCandlestickPatterns(data).map(p => {
+            const entry=data[p.endIndex]?.close||0, future=data[Math.min(data.length-1,p.endIndex+5)]?.close||entry;
+            const move=entry?((future-entry)/entry)*100:0;
+            return {...p,move,directionAdjusted:p.type==='BEARISH'?-move:move};
+        });
         function Dashboard() {
             const [theme, setTheme] = React.useState(() => localStorage.getItem('matrix_theme') || 'dark');
             const [watchlist, setWatchlist] = React.useState(() => {
@@ -327,6 +289,8 @@
             const [syncStatusText, setSyncStatusText] = React.useState('SYSTEM_READY');
             const [marketTelemetry, setMarketTelemetry] = React.useState({ isOpen: true, text: 'CALCULATING WINDOWS...' });
             const [showPatterns, setShowPatterns] = React.useState(false);
+            const [showPatternLab, setShowPatternLab] = React.useState(false);
+            const [priceAlerts, setPriceAlerts] = React.useState(() => JSON.parse(localStorage.getItem('matrix_price_alerts') || '[]'));
 
             const [stockPrices, setStockPrices] = React.useState({});
             const [renderedChartData, setRenderedChartData] = React.useState([]);
@@ -367,6 +331,8 @@
             React.useEffect(() => {
                 localStorage.setItem('matrix_watchlist_v2', JSON.stringify(watchlist));
             }, [watchlist]);
+
+            React.useEffect(() => localStorage.setItem('matrix_price_alerts', JSON.stringify(priceAlerts)), [priceAlerts]);
 
             const fetchPipelineData = React.useCallback(async () => {
                 setSyncProgress(10);
@@ -721,6 +687,8 @@
                                         <span>CANDLESTICK PATTERNS: {showPatterns ? 'ON' : 'OFF'}</span>
                                     </button>
 
+                                    <button onClick={() => setShowPatternLab(!showPatternLab)} class={`px-3 py-1 text-[9px] font-mono font-bold border rounded-xs cursor-pointer ${showPatternLab ? 'border-blue-500 text-blue-400' : 'border-zinc-800 text-zinc-500'}`}>PATTERN LAB</button>
+
                                     <button onClick={() => setIsMaximized(!isMaximized)} class="text-zinc-600 hover:text-zinc-400 cursor-pointer">
                                         {isMaximized ? <Icons.Minimize /> : <Icons.Maximize />}
                                     </button>
@@ -742,6 +710,7 @@
                                     <CandlestickChart vectorData={renderedChartData} theme={theme} showPatterns={showPatterns} />
                                 </div>
                             </div>
+                            {showPatternLab && <PatternLab data={renderedChartData} />}
                         </main>
 
                         <aside class="lg:col-span-3 flex flex-col overflow-y-auto bg-[#070708] divide-y divide-zinc-900">
@@ -762,6 +731,10 @@
                                 </div>
                             </div>
 
+                            <div class="p-6 space-y-3 border-b border-zinc-900">
+                                <div class="flex items-center justify-between"><h3 class="text-[10px] font-mono font-bold text-zinc-600 tracking-widest">PRICE ALERTS</h3><button onClick={() => setPriceAlerts([...priceAlerts,{id:Date.now(),ticker:activeStock,target:Number((stockPrices[activeStock]?.price||0).toFixed(2)),direction:'ABOVE'}])} class="text-[9px] font-mono text-[#00FF66]">+ ADD</button></div>
+                                {priceAlerts.filter(a=>a.ticker===activeStock).map(a=><div key={a.id} class="flex justify-between text-[10px] font-mono bg-zinc-950 border border-zinc-900 p-2"><span>{a.direction} ${a.target.toFixed(2)}</span><button onClick={()=>setPriceAlerts(priceAlerts.filter(x=>x.id!==a.id))} class="text-red-500">REMOVE</button></div>)}
+                            </div>
                             <div class="p-6 space-y-4 flex-1 flex flex-col">
                                 <div class="flex items-center justify-between">
                                     <h3 class="text-[10px] font-mono font-bold text-zinc-600 tracking-widest uppercase">FINANCIAL STATEMENTS</h3>
@@ -1000,6 +973,12 @@
                     </div>
                 </div>
             );
+        }
+
+        function PatternLab({data}) {
+            const rows=getPatternStatisticsSafe(data), bull=rows.filter(r=>r.type==='BULLISH'), bear=rows.filter(r=>r.type==='BEARISH');
+            const rate=items=>items.length?(items.filter(r=>r.directionAdjusted>0).length/items.length*100).toFixed(1):'0.0';
+            return <div class="mx-6 mb-4 p-4 border border-zinc-900 bg-zinc-950/70 rounded-sm font-mono"><div class="text-[10px] text-zinc-500 mb-3">PATTERN PERFORMANCE LAB // 5-CANDLE OBSERVATION</div><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]"><div class="border border-zinc-900 p-2">BULLISH <strong class="text-[#00FF66]">{bull.length}</strong></div><div class="border border-zinc-900 p-2">BULL WIN {rate(bull)}%</div><div class="border border-zinc-900 p-2">BEARISH <strong class="text-red-500">{bear.length}</strong></div><div class="border border-zinc-900 p-2">BEAR WIN {rate(bear)}%</div></div><div class="mt-3 text-[9px] text-zinc-600">Illustrative observations; not a trading guarantee.</div></div>;
         }
 
         const appRoot = ReactDOM.createRoot(document.getElementById('root'));
