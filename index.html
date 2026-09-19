@@ -1170,6 +1170,28 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                             <line x1={0} y1={rsiTop + rsiAreaHeight} x2={widthDimension} y2={rsiTop + rsiAreaHeight} stroke="#1f1f23" strokeWidth="1" />
                             <line x1={0} y1={macdTop} x2={widthDimension} y2={macdTop} stroke="#1f1f23" strokeWidth="1" />
 
+                            <g pointerEvents="none">
+                                <rect x="6" y="6" width="142" height="16" rx="2" fill="#09090b" opacity="0.82" />
+                                <text x="12" y="17" fill="#a1a1aa" fontSize="8" fontFamily="monospace" fontWeight="bold">PRICE ACTION // OHLC</text>
+                                <rect x="6" y={rsiTop + 6} width="116" height="16" rx="2" fill="#09090b" opacity="0.82" />
+                                <text x="12" y={rsiTop + 17} fill="#c084fc" fontSize="8" fontFamily="monospace" fontWeight="bold">RSI (14) // 30 / 70</text>
+                                <rect x="6" y={macdTop + 6} width="142" height="16" rx="2" fill="#09090b" opacity="0.82" />
+                                <text x="12" y={macdTop + 17} fill="#60a5fa" fontSize="8" fontFamily="monospace" fontWeight="bold">MACD (12,26,9)</text>
+                                <text x="155" y={macdTop + 17} fill="#60a5fa" fontSize="7" fontFamily="monospace">MACD</text>
+                                <text x="195" y={macdTop + 17} fill="#eab308" fontSize="7" fontFamily="monospace">SIGNAL</text>
+                                <text x="242" y={macdTop + 17} fill="#71717a" fontSize="7" fontFamily="monospace">HIST</text>
+                            </g>
+
+                            {(() => {
+                                const zeroY = macdTop + (macdAreaHeight * (1 - (0 - minMacd) / macdDelta));
+                                return (
+                                    <g>
+                                        <line x1={0} y1={zeroY} x2={widthDimension} y2={zeroY} stroke="rgba(161,161,170,0.32)" strokeWidth="1" strokeDasharray="4,3" />
+                                        <text x={widthDimension - 5} y={zeroY - 3} textAnchor="end" fill="#6b7280" fontSize="7" fontFamily="monospace">0</text>
+                                    </g>
+                                );
+                            })()}
+
                             {Array.from({ length: 4 }).map((_, idx) => {
                                 const calculatedPrice = minPrice + (priceDelta * (idx / 3));
                                 const yPos = candleAreaHeight * (1 - (calculatedPrice - minPrice) / priceDelta);
@@ -1187,7 +1209,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                 const yPos = rsiTop + (rsiAreaHeight * (1 - val / 100));
                                 return (
                                     <g key={`rsi-${val}`}>
-                                        <line x1={0} y1={yPos} x2={widthDimension} y2={yPos} stroke={val === 50 ? "rgba(255,255,255,0.04)" : "rgba(168,85,247,0.15)"} strokeDasharray={val === 50 ? "2,2" : "4,4"} />
+                                        <line x1={0} y1={yPos} x2={widthDimension} y2={yPos} stroke={val === 50 ? "rgba(255,255,255,0.04)" : "rgba(168,85,247,0.15)"} strokeWidth={val === 50 ? "1" : "1.2"} strokeDasharray={val === 50 ? "2,2" : "4,4"} />
                                         <text x={widthDimension - 5} y={yPos - 2} textAnchor="end" fill="#6b7280" fontSize="7" fontFamily="monospace">RSI {val}</text>
                                     </g>
                                 );
