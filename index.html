@@ -691,11 +691,35 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             const [marketTelemetry, setMarketTelemetry] = React.useState({ isOpen: true, text: 'CALCULATING WINDOWS...' });
             const [showPatterns, setShowPatterns] = React.useState(false);
             const [showPatternLab, setShowPatternLab] = React.useState(false);
-            const [priceAlerts, setPriceAlerts] = React.useState(() => JSON.parse(localStorage.getItem('matrix_price_alerts') || '[]'));
+            const [priceAlerts, setPriceAlerts] = React.useState(() => {
+                try {
+                    const saved = JSON.parse(localStorage.getItem('matrix_price_alerts') || 'null');
+                    const savedByTicker = saved && !Array.isArray(saved) ? saved : {};
+                    return TICKER_DICTIONARY
+                        .filter(item => item.alert !== '')
+                        .map(item => ({
+                            id: `default-${item.ticker}`,
+                            ticker: item.ticker,
+                            target: Number(savedByTicker[item.ticker]?.target ?? item.alert),
+                            direction: savedByTicker[item.ticker]?.direction || 'BELOW',
+                            enabled: savedByTicker[item.ticker]?.enabled !== false,
+                            isDefault: !savedByTicker[item.ticker]
+                        }));
+                } catch (e) {
+                    return TICKER_DICTIONARY.filter(item => item.alert !== '').map(item => ({
+                        id: `default-${item.ticker}`, ticker: item.ticker, target: Number(item.alert),
+                        direction: 'BELOW', enabled: true, isDefault: true
+                    }));
+                }
+            });
 
             const [stockPrices, setStockPrices] = React.useState({});
             const [renderedChartData, setRenderedChartData] = React.useState([]);
             const [fundamentals, setFundamentals] = React.useState({});
+            const [quoteInfo, setQuoteInfo] = React.useState({});
+            const [notificationStatus, setNotificationStatus] = React.useState(
+                typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'
+            );
             
             // Core Cache Layer to hold raw financial statement metrics cleanly from production socket
             const [liveFinancials, setLiveFinancials] = React.useState({});
@@ -738,7 +762,53 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 localStorage.setItem('matrix_watchlist_v2', JSON.stringify(watchlist));
             }, [watchlist]);
 
-            React.useEffect(() => localStorage.setItem('matrix_price_alerts', JSON.stringify(priceAlerts)), [priceAlerts]);
+            React.useEffect(() => {
+                const compact = {};
+                priceAlerts.forEach(alert => {
+                    compact[alert.ticker] = {
+                        target: Number(alert.target),
+                        direction: alert.direction,
+                        enabled: alert.enabled !== false
+                    };
+                });
+                localStorage.setItem('matrix_price_alerts', JSON.stringify(compact));
+            }, [priceAlerts]);
+
+            const requestNotificationPermission = async () => {
+                if (typeof Notification === 'undefined') return;
+                const result = await Notification.requestPermission();
+                setNotificationStatus(result);
+            };
+
+            const evaluatePriceAlerts = React.useCallback((prices) => {
+                if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+                const notifiedKey = 'matrix_price_alert_notifications';
+                let notified = {};
+                try { notified = JSON.parse(localStorage.getItem(notifiedKey) || '{}'); } catch (e) {}
+                priceAlerts.forEach(alert => {
+                    if (alert.enabled === false) return;
+                    const current = Number(prices[alert.ticker]?.price);
+                    const target = Number(alert.target);
+                    if (!Number.isFinite(current) || !Number.isFinite(target) || target <= 0) return;
+                    const proximity = Math.abs(current - target) / target;
+                    const directionMatch = alert.direction === 'ABOVE' ? current >= target : current <= target;
+                    const key = `${alert.ticker}:${alert.direction}:${target}`;
+                    if (directionMatch && proximity <= 0.05 && !notified[key]) {
+                        new Notification(`${alert.ticker} price alert`, {
+                            body: `${alert.ticker} is ${current.toFixed(2)} (${alert.direction.toLowerCase()} ${target.toFixed(2)}).`,
+                            tag: key
+                        });
+                        notified[key] = Date.now();
+                    } else if (proximity > 0.05 || !directionMatch) {
+                        delete notified[key];
+                    }
+                });
+                localStorage.setItem(notifiedKey, JSON.stringify(notified));
+            }, [priceAlerts]);
+
+            React.useEffect(() => {
+                evaluatePriceAlerts(stockPrices);
+            }, [stockPrices, evaluatePriceAlerts]);
 
             const fetchPipelineData = React.useCallback(async () => {
                 setSyncProgress(10);
@@ -835,6 +905,32 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                             }
                         }
 
+                        // Fetch and cache the selected ticker's live quote for the lower-right information panel.
+                        const quoteCacheKey = `quote_${activeStock}`;
+                        const quoteCached = JSON.parse(localStorage.getItem(quoteCacheKey) || 'null');
+                        let quoteJson = quoteCached && Date.now() - quoteCached.timestamp < 5 * 60 * 1000 ? quoteCached.data : null;
+                        if (!quoteJson) {
+                            const quoteRes = await fetch(`https://api.twelvedata.com/quote?symbol=${encodeURIComponent(activeStock)}&apikey=${apiKey}`);
+                            quoteJson = await quoteRes.json();
+                            if (!quoteJson.status || quoteJson.status !== 'error') {
+                                localStorage.setItem(quoteCacheKey, JSON.stringify({ timestamp: Date.now(), data: quoteJson }));
+                            }
+                        }
+                        if (quoteJson && (!quoteJson.status || quoteJson.status !== 'error')) {
+                            setQuoteInfo(prev => ({ ...prev, [activeStock]: quoteJson }));
+                            setStockPrices(prev => ({
+                                ...prev,
+                                [activeStock]: {
+                                    ...(prev[activeStock] || {}),
+                                    price: Number(quoteJson.close || quoteJson.price || 0),
+                                    change: Number(quoteJson.percent_change || 0),
+                                    volume: quoteJson.volume || prev[activeStock]?.volume || 'N/A',
+                                    cap: prev[activeStock]?.cap || 'N/A',
+                                    pe: prev[activeStock]?.pe || 'N/A'
+                                }
+                            }));
+                        }
+
                         // PRODUCTION IMPLEMENTATION: Fetch real income statements (both annual and quarterly profiles)
                         setSyncProgress(80);
                         setSyncStatusText('FETCHING LIVE FUNDAMENTAL STATEMENTS...');
@@ -920,6 +1016,10 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                     }
                 }
 
+                const cachedQuote = JSON.parse(localStorage.getItem(`quote_${activeStock}`) || 'null');
+                if (cachedQuote?.data && (!quoteInfo[activeStock])) {
+                    setQuoteInfo(prev => ({ ...prev, [activeStock]: cachedQuote.data }));
+                }
                 setStockPrices(localPrices);
                 setSyncProgress(100);
                 if (apiKey) setSyncStatusText('LIVE VECTOR FEED ACTIVE');
@@ -928,6 +1028,13 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             React.useEffect(() => {
                 fetchPipelineData();
             }, [activeStock, timeframe, apiKey, watchlist]);
+
+            // Refresh live quotes periodically while the dashboard remains open.
+            React.useEffect(() => {
+                if (!apiKey) return;
+                const timer = setInterval(() => fetchPipelineData(), 60 * 1000);
+                return () => clearInterval(timer);
+            }, [fetchPipelineData, apiKey]);
 
             const executeSearchEngine = (e) => {
                 const text = e.target.value;
@@ -1132,7 +1239,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                 <div class="grid grid-cols-2 gap-3">
                                     {[
                                         { label: 'MARKET CAP', value: stockPrices[activeStock] ? stockPrices[activeStock].cap : activeCompanyMeta.cap },
-                                        { label: 'P/E RATIO', value: stockPrices[activeStock] ? stockPrices[activeStock].pe : activeCompanyMeta.pe },
+                                         { label: 'P/E RATIO', value: stockPrices[activeStock] ? stockPrices[activeStock].pe : activeCompanyMeta.pe },
                                         { label: `WINDOW LOW (${timeframe})`, value: windowLow ? `$${windowLow.toFixed(2)}` : 'N/A' },
                                         { label: `WINDOW HIGH (${timeframe})`, value: windowHigh ? `$${windowHigh.toFixed(2)}` : 'N/A' }
                                     ].map((m, idx) => (
@@ -1145,8 +1252,26 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                             </div>
 
                             <div class={`p-6 space-y-3 border-b ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>
-                                <div class="flex items-center justify-between"><h3 class={`text-[10px] font-mono font-bold tracking-widest ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>PRICE ALERTS</h3><button onClick={() => setPriceAlerts([...priceAlerts,{id:Date.now(),ticker:activeStock,target:Number((stockPrices[activeStock]?.price||0).toFixed(2)),direction:'ABOVE'}])} class="text-[9px] font-mono text-[#00FF66]">+ ADD</button></div>
-                                {priceAlerts.filter(a=>a.ticker===activeStock).map(a=><div key={a.id} class={`flex justify-between text-[10px] font-mono p-2 ${theme === 'dark' ? 'bg-zinc-950 border border-zinc-900' : 'bg-white border border-zinc-200'}`}><span class={theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}>{a.direction} ${a.target.toFixed(2)}</span><button onClick={()=>setPriceAlerts(priceAlerts.filter(x=>x.id!==a.id))} class="text-red-500">REMOVE</button></div>)}
+                                <div class="flex items-center justify-between">
+                                    <h3 class={`text-[10px] font-mono font-bold tracking-widest ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>PRICE ALERTS</h3>
+                                    <div class="flex gap-2">
+                                        <button onClick={requestNotificationPermission} class="text-[9px] font-mono text-[#00FF66]">NOTIFY</button>
+                                        <button onClick={() => setPriceAlerts([...priceAlerts,{id:Date.now(),ticker:activeStock,target:Number((stockPrices[activeStock]?.price||0).toFixed(2)),direction:'ABOVE',enabled:true,isDefault:false}])} class="text-[9px] font-mono text-[#00FF66]">+ ADD</button>
+                                    </div>
+                                </div>
+                                {priceAlerts.filter(a=>a.ticker===activeStock).map(a=>(
+                                    <div key={a.id} class={`space-y-2 text-[10px] font-mono p-2 ${theme === 'dark' ? 'bg-zinc-950 border border-zinc-900' : 'bg-white border border-zinc-200'}`}>
+                                        <div class="flex items-center justify-between gap-2">
+                                            <select value={a.direction} onChange={e=>setPriceAlerts(priceAlerts.map(x=>x.id===a.id?{...x,direction:e.target.value,isDefault:false}:x))} class="bg-transparent text-[10px]">
+                                                <option value="ABOVE">ABOVE</option><option value="BELOW">BELOW</option>
+                                            </select>
+                                            <input type="number" step="0.01" value={a.target} onChange={e=>setPriceAlerts(priceAlerts.map(x=>x.id===a.id?{...x,target:Number(e.target.value),isDefault:false}:x))} class="w-20 bg-transparent border-b border-zinc-700 text-right"/>
+                                            <button onClick={()=>setPriceAlerts(priceAlerts.filter(x=>x.id!==a.id))} class="text-red-500">REMOVE</button>
+                                        </div>
+                                        <label class="flex items-center gap-2 text-[9px]"><input type="checkbox" checked={a.enabled!==false} onChange={e=>setPriceAlerts(priceAlerts.map(x=>x.id===a.id?{...x,enabled:e.target.checked,isDefault:false}:x))}/> ENABLED · ±5% proximity</label>
+                                    </div>
+                                ))}
+                                <div class="text-[9px] font-mono text-zinc-500">Notifications: {notificationStatus}</div>
                             </div>
                             <div class="p-6 space-y-4 flex-1 flex flex-col">
                                 <div class="flex items-center justify-between">
