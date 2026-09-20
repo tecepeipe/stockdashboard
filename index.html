@@ -1310,7 +1310,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                         <input type="password" id="api_input_field" placeholder="OPTIONAL TWELVEDATA KEY" defaultValue={apiKey} class={`w-full border rounded-md px-3 text-xs font-mono h-10 focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-[#00FF66]' : 'bg-zinc-50 border-zinc-300 text-[#00FF66]'}`} />
                                     </div>
                                 </div>
-                                <div class="text-[10px] font-mono text-zinc-500">If both Alpaca fields are provided, Alpaca is used. Otherwise, a Twelve Data key is used. Credentials are stored in this browser's localStorage.</div>
+                                <div class="text-[10px] font-mono text-zinc-500">If both Alpaca fields are provided, Alpaca is used. Otherwise, a Twelve Data key is used.<br>Credentials are stored in this browser's localStorage.</div>
                                 <div class="flex justify-end">
                                     <button onClick={() => {
                                         const twelveVal = document.getElementById('api_input_field').value.trim();
