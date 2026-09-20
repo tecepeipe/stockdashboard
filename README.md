@@ -39,12 +39,12 @@ The application starts with **built-in mock market data**, allowing visitors to 
   - Use retrieved market data in the dashboard when the API is configured.
 
 - **Price alerts**
-  - Create simple price-threshold entries for the currently selected instrument.
+  - Create price-threshold entries for the currently selected instrument.
+  - Default Alerts based on 2y history (if it approaches 2y low)
   - Store alert entries locally in the browser.
 
 - **Single-file application**
   - Designed to run as a standalone HTML file.
-  - No Vite migration or build process is required.
 
 ## Getting Started
 
@@ -104,6 +104,7 @@ Core concepts include:
 - Technical-indicator calculations
 - Candlestick-pattern recognition
 - Twelve Data API integration
+- Price Alert
 - Browser local storage
 
 ## Project Status
@@ -112,9 +113,6 @@ This project is an interactive visualisation and experimentation tool. Pattern r
 
 ## Possible Future Improvements
 
-- Automatic alert evaluation when prices cross configured thresholds
-- Browser notifications for triggered alerts
-- More candlestick formations and configurable pattern filters
 - Backtesting with configurable entry, exit, and risk-management rules
 - Additional indicators and multi-chart layouts
 - Improved API error handling and rate-limit feedback
