@@ -799,6 +799,10 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             const [activeStock, setActiveStock] = React.useState('AAPL');
             const [timeframe, setTimeframe] = React.useState('1D');
             const [apiKey, setApiKey] = React.useState(() => localStorage.getItem('matrix_twelvedata_key') || '');
+            const [alpacaKeyId, setAlpacaKeyId] = React.useState(() => localStorage.getItem('matrix_alpaca_key_id') || '');
+            const [alpacaSecretKey, setAlpacaSecretKey] = React.useState(() => localStorage.getItem('matrix_alpaca_secret_key') || '');
+            const activeProvider = alpacaKeyId && alpacaSecretKey ? 'ALPACA' : apiKey ? 'TWELVEDATA' : 'DEMO';
+            const hasLiveCredentials = activeProvider !== 'DEMO';
             const [showApiInput, setShowApiInput] = React.useState(false);
             const [isMaximized, setIsMaximized] = React.useState(false);
             const [searchQuery, setSearchQuery] = React.useState('');
@@ -938,11 +942,11 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
                 let allCached = true;
                 for (let ticker of watchlist) {
-                    const cacheKey = `cache_${ticker}_${timeframe}_${apiKey ? 'live' : 'fake'}`;
+                    const cacheKey = `cache_${ticker}_${timeframe}_${hasLiveCredentials ? activeProvider.toLowerCase() : 'fake'}`;
                     const cachedString = localStorage.getItem(cacheKey);
                     if (cachedString) {
                         const parsedCache = JSON.parse(cachedString);
-                        const cacheValidityDuration = apiKey ? 5 * 60 * 1000 : 10 * 60 * 1000;
+                        const cacheValidityDuration = hasLiveCredentials ? 5 * 60 * 1000 : 10 * 60 * 1000;
                         if (Date.now() - parsedCache.timestamp > cacheValidityDuration) {
                             allCached = false;
                         }
@@ -951,7 +955,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                     }
                 }
 
-                if (!apiKey) {
+                if (!hasLiveCredentials) {
                     for (let ticker of watchlist) {
                         const cacheKey = `cache_${ticker}_${timeframe}_fake`;
                         let processedData = generateForcedFakeData(ticker, timeframe);
@@ -978,34 +982,57 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 if (!allCached) {
                     try {
                         setSyncProgress(30);
-                        const symbolsParam = watchlist.join(',');
-                        const url = `https://api.twelvedata.com/time_series?symbol=${symbolsParam}&interval=${selectedInterval}&outputsize=60&apikey=${apiKey}`;
-                        
-                        const res = await fetch(url);
-                        const resJson = await res.json();
-
-                        if (resJson.status === 'error') throw new Error(resJson.message);
-
-                        for (let ticker of watchlist) {
-                            const tickerData = watchlist.length === 1 ? resJson : resJson[ticker];
-                            
-                            if (tickerData && tickerData.values) {
-                                const processedData = calculateTechnicalIndicators(tickerData.values.map(v => ({
-                                    time: v.datetime,
-                                    open: parseFloat(v.open),
-                                    high: parseFloat(v.high),
-                                    low: parseFloat(v.low),
-                                    close: parseFloat(v.close),
-                                    volume: parseInt(v.volume || 0)
-                                })).reverse());
-
-                                const cacheKey = `cache_${ticker}_${timeframe}_live`;
-                                localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: processedData }));
+                        if (activeProvider === 'ALPACA') {
+                            for (let ticker of watchlist) {
+                                const alpacaTimeframe = { '1D': '5Min', '1W': '15Min', '1M': '30Min', '1Y': '1Day' }[timeframe] || '1Day';
+                                const alpacaUrl = `https://data.alpaca.markets/v2/stocks/${encodeURIComponent(ticker)}/bars?timeframe=${alpacaTimeframe}&limit=60&sort=asc&feed=iex`;
+                                const alpacaRes = await fetch(alpacaUrl, {
+                                    headers: {
+                                        'APCA-API-KEY-ID': alpacaKeyId,
+                                        'APCA-API-SECRET-KEY': alpacaSecretKey
+                                    }
+                                });
+                                const alpacaJson = await alpacaRes.json();
+                                if (!alpacaRes.ok || alpacaJson.code) throw new Error(alpacaJson.message || `Alpaca request failed for ${ticker}`);
+                                const bars = Array.isArray(alpacaJson.bars) ? alpacaJson.bars : [];
+                                if (bars.length) {
+                                    const processedData = calculateTechnicalIndicators(bars.map(v => ({
+                                        time: v.t,
+                                        open: Number(v.o),
+                                        high: Number(v.h),
+                                        low: Number(v.l),
+                                        close: Number(v.c),
+                                        volume: Number(v.v || 0)
+                                    })));
+                                    const cacheKey = `cache_${ticker}_${timeframe}_alpaca`;
+                                    localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: processedData }));
+                                }
+                            }
+                        } else {
+                            const symbolsParam = watchlist.join(',');
+                            const url = `https://api.twelvedata.com/time_series?symbol=${symbolsParam}&interval=${selectedInterval}&outputsize=60&apikey=${apiKey}`;
+                            const res = await fetch(url);
+                            const resJson = await res.json();
+                            if (resJson.status === 'error') throw new Error(resJson.message);
+                            for (let ticker of watchlist) {
+                                const tickerData = watchlist.length === 1 ? resJson : resJson[ticker];
+                                if (tickerData && tickerData.values) {
+                                    const processedData = calculateTechnicalIndicators(tickerData.values.map(v => ({
+                                        time: v.datetime,
+                                        open: parseFloat(v.open),
+                                        high: parseFloat(v.high),
+                                        low: parseFloat(v.low),
+                                        close: parseFloat(v.close),
+                                        volume: parseInt(v.volume || 0)
+                                    })).reverse());
+                                    const cacheKey = `cache_${ticker}_${timeframe}_twelvedata`;
+                                    localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: processedData }));
+                                }
                             }
                         }
-
-                        setSyncProgress(60);
-                        setSyncStatusText('COMPILING KEY PROFILE VECTORS...');
+                        if (activeProvider === 'TWELVEDATA') {
+                            setSyncProgress(60);
+                            setSyncStatusText('COMPILING KEY PROFILE VECTORS...');
                         const profileUrl = `https://api.twelvedata.com/profile?symbol=${activeStock}&apikey=${apiKey}`;
                         const profileRes = await fetch(profileUrl);
                         const profileJson = await profileRes.json();
@@ -1023,13 +1050,35 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                             }
                         }
 
+                        }
+
                         // Fetch and cache the selected ticker's live quote for the lower-right information panel.
-                        const quoteCacheKey = `quote_${activeStock}`;
+                        const quoteCacheKey = `quote_${activeProvider.toLowerCase()}_${activeStock}`;
                         const quoteCached = JSON.parse(localStorage.getItem(quoteCacheKey) || 'null');
                         let quoteJson = quoteCached && Date.now() - quoteCached.timestamp < 5 * 60 * 1000 ? quoteCached.data : null;
                         if (!quoteJson) {
-                            const quoteRes = await fetch(`https://api.twelvedata.com/quote?symbol=${encodeURIComponent(activeStock)}&apikey=${apiKey}`);
-                            quoteJson = await quoteRes.json();
+                            if (activeProvider === 'ALPACA') {
+                                const quoteRes = await fetch(`https://data.alpaca.markets/v2/stocks/${encodeURIComponent(activeStock)}/snapshot?feed=iex`, {
+                                    headers: {
+                                        'APCA-API-KEY-ID': alpacaKeyId,
+                                        'APCA-API-SECRET-KEY': alpacaSecretKey
+                                    }
+                                });
+                                const snapshot = await quoteRes.json();
+                                if (!quoteRes.ok || snapshot.code) throw new Error(snapshot.message || 'Alpaca snapshot request failed');
+                                quoteJson = {
+                                    price: snapshot.latestTrade?.p ?? snapshot.minuteBar?.c ?? snapshot.dailyBar?.c,
+                                    close: snapshot.latestTrade?.p ?? snapshot.minuteBar?.c ?? snapshot.dailyBar?.c,
+                                    percent_change: snapshot.prevDailyBar?.c ? (((snapshot.dailyBar?.c - snapshot.prevDailyBar.c) / snapshot.prevDailyBar.c) * 100) : 0,
+                                    volume: snapshot.dailyBar?.v,
+                                    low: snapshot.dailyBar?.l,
+                                    high: snapshot.dailyBar?.h,
+                                    source: 'ALPACA'
+                                };
+                            } else {
+                                const quoteRes = await fetch(`https://api.twelvedata.com/quote?symbol=${encodeURIComponent(activeStock)}&apikey=${apiKey}`);
+                                quoteJson = await quoteRes.json();
+                            }
                             if (!quoteJson.status || quoteJson.status !== 'error') {
                                 localStorage.setItem(quoteCacheKey, JSON.stringify({ timestamp: Date.now(), data: quoteJson }));
                             }
@@ -1049,8 +1098,9 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                             }));
                         }
 
-                        // PRODUCTION IMPLEMENTATION: Fetch real income statements (both annual and quarterly profiles)
-                        setSyncProgress(80);
+                        if (activeProvider === 'TWELVEDATA') {
+                            // PRODUCTION IMPLEMENTATION: Fetch real income statements (both annual and quarterly profiles)
+                            setSyncProgress(80);
                         setSyncStatusText('FETCHING LIVE FUNDAMENTAL STATEMENTS...');
                         
                         // 1. Fetch Annual Income Statement Data
@@ -1097,16 +1147,17 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                         structuredLiveFinancials.annual.earnings = simulatedDataRef.annual.earnings;
                         structuredLiveFinancials.quarter.earnings = simulatedDataRef.quarter.earnings;
 
-                        setLiveFinancials(prev => ({ ...prev, [activeStock]: structuredLiveFinancials }));
+                            setLiveFinancials(prev => ({ ...prev, [activeStock]: structuredLiveFinancials }));
+                        }
 
                     } catch (e) {
-                        console.error("TwelveData Stream Exception Encountered:", e.message);
+                        console.error(`${activeProvider} Stream Exception Encountered:`, e.message);
                         setSyncStatusText(`API ERROR: ${e.message.slice(0, 20)}...`);
                     }
                 }
 
                 for (let ticker of watchlist) {
-                    const cacheKey = `cache_${ticker}_${timeframe}_${apiKey ? 'live' : 'fake'}`;
+                    const cacheKey = `cache_${ticker}_${timeframe}_${hasLiveCredentials ? activeProvider.toLowerCase() : 'fake'}`;
                     const cachedString = localStorage.getItem(cacheKey);
                     
                     if (cachedString) {
@@ -1134,25 +1185,25 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                     }
                 }
 
-                const cachedQuote = JSON.parse(localStorage.getItem(`quote_${activeStock}`) || 'null');
+                const cachedQuote = JSON.parse(localStorage.getItem(`quote_${activeProvider.toLowerCase()}_${activeStock}`) || 'null');
                 if (cachedQuote?.data && (!quoteInfo[activeStock])) {
                     setQuoteInfo(prev => ({ ...prev, [activeStock]: cachedQuote.data }));
                 }
                 setStockPrices(localPrices);
                 setSyncProgress(100);
-                if (apiKey) setSyncStatusText('LIVE VECTOR FEED ACTIVE');
-            }, [watchlist, timeframe, apiKey, activeStock, fundamentals]);
+                if (hasLiveCredentials) setSyncStatusText(`${activeProvider} LIVE VECTOR FEED ACTIVE`);
+            }, [watchlist, timeframe, apiKey, alpacaKeyId, alpacaSecretKey, activeProvider, hasLiveCredentials, activeStock, fundamentals]);
 
             React.useEffect(() => {
                 fetchPipelineData();
-            }, [activeStock, timeframe, apiKey, watchlist]);
+            }, [activeStock, timeframe, apiKey, alpacaKeyId, alpacaSecretKey, watchlist]);
 
             // Refresh live quotes periodically while the dashboard remains open.
             React.useEffect(() => {
-                if (!apiKey) return;
+                if (!hasLiveCredentials) return;
                 const timer = setInterval(() => fetchPipelineData(), 60 * 1000);
                 return () => clearInterval(timer);
-            }, [fetchPipelineData, apiKey]);
+            }, [fetchPipelineData, hasLiveCredentials, activeProvider]);
 
             const executeSearchEngine = (e) => {
                 const text = e.target.value;
@@ -1185,15 +1236,16 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             const activeLiveCap = stockPrices[activeStock] ? stockPrices[activeStock].cap : null;
             
             // Resolve final active statements object state (Prioritize true dynamic live financial metrics, fallback to mock matrix if key missing)
-            const activeFinancialsData = apiKey && liveFinancials[activeStock] 
-                ? liveFinancials[activeStock] 
-                : generateFinancials(activeStock, activeLiveCap);
+            const showFinancials = activeProvider !== 'ALPACA';
+            const activeFinancialsData = activeProvider === 'TWELVEDATA' && liveFinancials[activeStock]
+                ? liveFinancials[activeStock]
+                : showFinancials ? generateFinancials(activeStock, activeLiveCap) : { annual: { performance: [], earnings: [] }, quarter: { performance: [], earnings: [] } };
 
             return (
                 <div class={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${theme === 'dark' ? 'bg-[#050505] text-zinc-400' : 'bg-[#f0f2f5] text-zinc-600'}`}>
                     
                     <div class="h-[2px] w-full bg-zinc-950 relative z-50">
-                        <div class={`h-full transition-all duration-300 ${apiKey ? 'bg-[#00FF66]' : 'bg-blue-500'}`} style={{ width: `${syncProgress}%` }}></div>
+                        <div class={`h-full transition-all duration-300 ${hasLiveCredentials ? 'bg-[#00FF66]' : 'bg-blue-500'}`} style={{ width: `${syncProgress}%` }}></div>
                     </div>
 
                     <header class={`border-b px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-40 backdrop-blur-md ${theme === 'dark' ? 'border-zinc-900 bg-zinc-950/80' : 'border-zinc-200 bg-white/90'}`}>
@@ -1211,13 +1263,20 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                 {theme === 'dark' ? <Icons.Sun /> : <Icons.Moon />}
                             </button>
 
-                            <button onClick={() => setShowApiInput(!showApiInput)} class={`min-h-[38px] px-3 rounded-md border text-xs flex items-center space-x-2 font-mono transition-all cursor-pointer ${apiKey ? 'border-[#00FF66]/40 text-[#00FF66]' : theme === 'dark' ? 'border-zinc-700 text-zinc-500' : 'border-zinc-300 text-zinc-500'}`}>
+                            <button onClick={() => setShowApiInput(!showApiInput)} class={`min-h-[38px] px-3 rounded-md border text-xs flex items-center space-x-2 font-mono transition-all cursor-pointer ${hasLiveCredentials ? 'border-[#00FF66]/40 text-[#00FF66]' : theme === 'dark' ? 'border-zinc-700 text-zinc-500' : 'border-zinc-300 text-zinc-500'}`}>
                                 <Icons.Key />
-                                <span class="hidden sm:inline font-bold">{apiKey ? 'LIVE CONNECTOR' : 'TWELVEDATA API'}</span>
+                                <span class="hidden sm:inline font-bold">{activeProvider === 'ALPACA' ? 'ALPACA API' : activeProvider === 'TWELVEDATA' ? 'TWELVEDATA API' : 'DATA PROVIDER'}</span>
                             </button>
 
-                            {apiKey && (
-                                <button onClick={() => { setApiKey(''); localStorage.removeItem('matrix_twelvedata_key'); }} class={`min-h-[38px] px-3 rounded-md border text-xs flex items-center space-x-2 font-mono transition-all cursor-pointer border-red-500/40 text-red-500`}>
+                            {hasLiveCredentials && (
+                                <button onClick={() => {
+                                    setApiKey('');
+                                    setAlpacaKeyId('');
+                                    setAlpacaSecretKey('');
+                                    localStorage.removeItem('matrix_twelvedata_key');
+                                    localStorage.removeItem('matrix_alpaca_key_id');
+                                    localStorage.removeItem('matrix_alpaca_secret_key');
+                                }} class={`min-h-[38px] px-3 rounded-md border text-xs flex items-center space-x-2 font-mono transition-all cursor-pointer border-red-500/40 text-red-500`}>
                                     <Icons.Trash />
                                     <span class="hidden sm:inline font-bold">CLEAR API</span>
                                 </button>
@@ -1225,7 +1284,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                         </div>
                     </header>
 
-                    <div class={`px-6 py-2 border-b text-[10px] font-mono flex items-center justify-between tracking-wider ${apiKey ? 'bg-emerald-900/10 text-emerald-500 border-emerald-950' : theme === 'dark' ? 'bg-zinc-900/40 text-zinc-500 border-zinc-900' : 'bg-zinc-100 text-zinc-500 border-zinc-200'}`}>
+                    <div class={`px-6 py-2 border-b text-[10px] font-mono flex items-center justify-between tracking-wider ${hasLiveCredentials ? 'bg-emerald-900/10 text-emerald-500 border-emerald-950' : theme === 'dark' ? 'bg-zinc-900/40 text-zinc-500 border-zinc-900' : 'bg-zinc-100 text-zinc-500 border-zinc-200'}`}>
                         <div class="flex items-center space-x-2">
                             <span class="animate-pulse">●</span>
                             <span>{syncStatusText} // {marketTelemetry.text}</span>
@@ -1235,16 +1294,35 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
                     {showApiInput && (
                         <div class={`border-b p-6 ${theme === 'dark' ? 'bg-zinc-950 border-zinc-900' : 'bg-white border-zinc-200'}`}>
-                            <div class="max-w-xl mx-auto space-y-2">
-                                <h3 class="text-xs font-mono font-bold uppercase tracking-wider text-zinc-400">TwelveData Production API Socket</h3>
-                                <div class="flex gap-2">
-                                    <input type="password" placeholder="ENTER TWELVEDATA API VALUE..." id="api_input_field" defaultValue={apiKey} class={`flex-1 border rounded-md px-3 text-xs font-mono h-10 focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-[#00FF66] placeholder-zinc-600' : 'bg-zinc-50 border-zinc-300 text-[#00FF66] placeholder-zinc-400'}`} />
+                            <div class="max-w-2xl mx-auto space-y-4">
+                                <h3 class="text-xs font-mono font-bold uppercase tracking-wider text-zinc-400">Market Data Provider</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div class="space-y-1">
+                                        <label class="text-[10px] font-mono text-zinc-500">ALPACA KEY ID</label>
+                                        <input type="password" id="alpaca_key_id_field" placeholder="OPTIONAL ALPACA KEY ID" defaultValue={alpacaKeyId} class={`w-full border rounded-md px-3 text-xs font-mono h-10 focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-[#00FF66]' : 'bg-zinc-50 border-zinc-300 text-[#00FF66]'}`} />
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="text-[10px] font-mono text-zinc-500">ALPACA SECRET KEY</label>
+                                        <input type="password" id="alpaca_secret_key_field" placeholder="OPTIONAL ALPACA SECRET KEY" defaultValue={alpacaSecretKey} class={`w-full border rounded-md px-3 text-xs font-mono h-10 focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-[#00FF66]' : 'bg-zinc-50 border-zinc-300 text-[#00FF66]'}`} />
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="text-[10px] font-mono text-zinc-500">TWELVEDATA API KEY</label>
+                                        <input type="password" id="api_input_field" placeholder="OPTIONAL TWELVEDATA KEY" defaultValue={apiKey} class={`w-full border rounded-md px-3 text-xs font-mono h-10 focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-[#00FF66]' : 'bg-zinc-50 border-zinc-300 text-[#00FF66]'}`} />
+                                    </div>
+                                </div>
+                                <div class="text-[10px] font-mono text-zinc-500">If both Alpaca fields are provided, Alpaca is used. Otherwise, a Twelve Data key is used. Credentials are stored in this browser's localStorage.</div>
+                                <div class="flex justify-end">
                                     <button onClick={() => {
-                                        const keyVal = document.getElementById('api_input_field').value.trim();
-                                        setApiKey(keyVal);
-                                        localStorage.setItem('matrix_twelvedata_key', keyVal);
+                                        const twelveVal = document.getElementById('api_input_field').value.trim();
+                                        const alpacaIdVal = document.getElementById('alpaca_key_id_field').value.trim();
+                                        const alpacaSecretVal = document.getElementById('alpaca_secret_key_field').value.trim();
+                                        setApiKey(twelveVal);
+                                        setAlpacaKeyId(alpacaIdVal);
+                                        setAlpacaSecretKey(alpacaSecretVal);
+                                        localStorage.setItem('matrix_twelvedata_key', twelveVal);
+                                        localStorage.setItem('matrix_alpaca_key_id', alpacaIdVal);
+                                        localStorage.setItem('matrix_alpaca_secret_key', alpacaSecretVal);
                                         setShowApiInput(false);
-                                        localStorage.clear();
                                     }} class="bg-[#00FF66] text-black px-4 text-xs font-mono font-bold rounded-md h-10 cursor-pointer">CONNECT</button>
                                 </div>
                             </div>
@@ -1358,6 +1436,8 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                     {[
                                         { label: 'MARKET CAP', value: stockPrices[activeStock] ? stockPrices[activeStock].cap : activeCompanyMeta.cap },
                                          { label: 'P/E RATIO', value: stockPrices[activeStock] ? stockPrices[activeStock].pe : activeCompanyMeta.pe },
+                                        { label: 'DAY CHANGE', value: quoteInfo[activeStock]?.percent_change != null ? `${Number(quoteInfo[activeStock].percent_change).toFixed(2)}%` : 'N/A'},
+                                        { label: 'DAY RANGE',  value: quoteInfo[activeStock]?.low != null && quoteInfo[activeStock]?.high != null ? `$${Number(quoteInfo[activeStock].low).toFixed(2)} – $${Number(quoteInfo[activeStock].high).toFixed(2)}` : 'N/A' },
                                         { label: `WINDOW LOW (${timeframe})`, value: windowLow ? `$${windowLow.toFixed(2)}` : 'N/A' },
                                         { label: `WINDOW HIGH (${timeframe})`, value: windowHigh ? `$${windowHigh.toFixed(2)}` : 'N/A' }
                                     ].map((m, idx) => (
@@ -1391,7 +1471,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                 ))}
                                 <div class="text-[9px] font-mono text-zinc-500">Notifications: {notificationStatus}</div>
                             </div>
-                            <div class="p-6 space-y-4 flex-1 flex flex-col">
+                            {showFinancials && <div class="p-6 space-y-4 flex-1 flex flex-col">
                                 <div class="flex items-center justify-between">
                                     <h3 class={`text-[10px] font-mono font-bold tracking-widest uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>FINANCIAL STATEMENTS</h3>
                                     <div class={`flex border p-0.5 rounded-sm ${theme === 'dark' ? 'bg-zinc-950 border-zinc-900' : 'bg-zinc-100 border-zinc-200'}`}>
@@ -1442,7 +1522,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                            </div>}
                         </aside>
 
                     </div>
