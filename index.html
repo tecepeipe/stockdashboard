@@ -491,6 +491,124 @@
                     lowerShadowPct
                 };
 
+                // Multi-candle pattern helpers. These use normalized candle geometry
+                // and a prior trend so formations are not flagged in isolation.
+                const candleMetrics = candle => {
+                    const open = Number(candle?.open);
+                    const close = Number(candle?.close);
+                    const high = Number(candle?.high);
+                    const low = Number(candle?.low);
+                    const range = Math.max(high - low, 0.000001);
+                    const realBody = Math.abs(close - open);
+                    return {
+                        open, close, high, low, range, body: realBody,
+                        bodyPct: realBody / range,
+                        bullish: close > open,
+                        bearish: close < open,
+                        upperWick: Math.max(0, high - Math.max(open, close)),
+                        lowerWick: Math.max(0, Math.min(open, close) - low)
+                    };
+                };
+                const priorTrendFor = index => trendAt(index);
+                const p2 = i >= 2 ? candleMetrics(data[i - 2]) : null;
+                const p1 = i >= 1 ? candleMetrics(data[i - 1]) : null;
+                const c0 = candleMetrics(curr);
+                const smallBody = metric => metric && metric.bodyPct <= 0.35;
+                const midpoint = metric => (metric.open + metric.close) / 2;
+                const sameLevel = (a, b, tolerance) => Math.abs(a - b) <= tolerance;
+
+                if (p2 && p1) {
+                    const threeCandleTrend = priorTrendFor(i - 2);
+                    const firstMidpoint = midpoint(p2);
+                    const morningStar =
+                        threeCandleTrend === 'DOWN' &&
+                        p2.bearish && p2.bodyPct >= 0.45 &&
+                        smallBody(p1) &&
+                        c0.bullish && c0.bodyPct >= 0.45 &&
+                        c0.close >= firstMidpoint &&
+                        c0.close > p1.close;
+                    const eveningStar =
+                        threeCandleTrend === 'UP' &&
+                        p2.bullish && p2.bodyPct >= 0.45 &&
+                        smallBody(p1) &&
+                        c0.bearish && c0.bodyPct >= 0.45 &&
+                        c0.close <= firstMidpoint &&
+                        c0.close < p1.close;
+
+                    if (morningStar) {
+                        addPattern(i - 2, i, 'BULLISH', 'MORNING STAR', { ...context, priorTrend: threeCandleTrend });
+                        continue;
+                    }
+                    if (eveningStar) {
+                        addPattern(i - 2, i, 'BEARISH', 'EVENING STAR', { ...context, priorTrend: threeCandleTrend });
+                        continue;
+                    }
+
+                    const tweezerTolerance = Math.max(atr * 0.20, 0.01);
+                    const tweezerBottom =
+                        threeCandleTrend === 'DOWN' &&
+                        p2.bearish && c0.bullish &&
+                        sameLevel(p2.low, c0.low, tweezerTolerance) &&
+                        c0.lowerWick >= c0.body * 0.5;
+                    const tweezerTop =
+                        threeCandleTrend === 'UP' &&
+                        p2.bullish && c0.bearish &&
+                        sameLevel(p2.high, c0.high, tweezerTolerance) &&
+                        c0.upperWick >= c0.body * 0.5;
+
+                    if (tweezerBottom) {
+                        addPattern(i - 1, i, 'BULLISH', 'TWEEZER BOTTOM', { ...context, priorTrend: threeCandleTrend });
+                        continue;
+                    }
+                    if (tweezerTop) {
+                        addPattern(i - 1, i, 'BEARISH', 'TWEEZER TOP', { ...context, priorTrend: threeCandleTrend });
+                        continue;
+                    }
+
+                    const threeInsideUp =
+                        threeCandleTrend === 'DOWN' &&
+                        p2.bearish && p1.bullish && c0.bullish &&
+                        p1.open >= p2.close && p1.close <= p2.open &&
+                        c0.close > p2.open;
+                    const threeInsideDown =
+                        threeCandleTrend === 'UP' &&
+                        p2.bullish && p1.bearish && c0.bearish &&
+                        p1.open <= p2.close && p1.close >= p2.open &&
+                        c0.close < p2.open;
+
+                    if (threeInsideUp) {
+                        addPattern(i - 2, i, 'BULLISH', 'THREE INSIDE UP', { ...context, priorTrend: threeCandleTrend });
+                        continue;
+                    }
+                    if (threeInsideDown) {
+                        addPattern(i - 2, i, 'BEARISH', 'THREE INSIDE DOWN', { ...context, priorTrend: threeCandleTrend });
+                        continue;
+                    }
+
+                    const soldiers = [p2, p1, c0];
+                    const threeWhiteSoldiers =
+                        threeCandleTrend === 'DOWN' &&
+                        soldiers.every(m => m.bullish && m.bodyPct >= 0.45 && m.upperWick <= m.range * 0.30) &&
+                        p1.close > p2.close && c0.close > p1.close &&
+                        p1.open >= p2.open && p1.open <= p2.close &&
+                        c0.open >= p1.open && c0.open <= p1.close;
+                    const threeBlackCrows =
+                        threeCandleTrend === 'UP' &&
+                        soldiers.every(m => m.bearish && m.bodyPct >= 0.45 && m.lowerWick <= m.range * 0.30) &&
+                        p1.close < p2.close && c0.close < p1.close &&
+                        p1.open <= p2.open && p1.open >= p2.close &&
+                        c0.open <= p1.open && c0.open >= p1.close;
+
+                    if (threeWhiteSoldiers) {
+                        addPattern(i - 2, i, 'BULLISH', 'THREE WHITE SOLDIERS', { ...context, priorTrend: threeCandleTrend });
+                        continue;
+                    }
+                    if (threeBlackCrows) {
+                        addPattern(i - 2, i, 'BEARISH', 'THREE BLACK CROWS', { ...context, priorTrend: threeCandleTrend });
+                        continue;
+                    }
+                }
+
                 // Hammer: a small real body near the top of the range, with a
                 // lower shadow at least twice the body, little upper shadow,
                 // and a genuine preceding downtrend.
@@ -1652,7 +1770,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
                     <div class={`mt-4 text-[9px] leading-relaxed ${mutedClass}`}>
                         <strong>Method:</strong> reversal patterns require a prior 3-candle trend measured before the signal candle. Hammer/shooting-star geometry uses a maximum 35% body/range, a shadow at least 2× the body and the opposite shadow at most 35% of the body.
-                        Engulfing patterns use real-body containment. Marubozu requires at least 90% body/range, shadows ≤5% of range and body ≥0.6× prior ATR. Volume is contextual only: current volume / prior 14-candle average; ≥1.10× is labeled volume support.
+                        Engulfing patterns use real-body containment. Marubozu requires at least 90% body/range, shadows ≤5% of range and body ≥0.6× prior ATR. Multi-candle patterns use prior-trend confirmation, normalized candle geometry and relative highs/lows. Volume is contextual only: current volume / prior 14-candle average; ≥1.10× is labeled volume support.
                         Forward returns are measured from the pattern close at +1, +3 and +5 candles. These are historical observations, not forecasts.
                     </div>
 
