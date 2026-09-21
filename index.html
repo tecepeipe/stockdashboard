@@ -63,7 +63,8 @@
             Key: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>,
             Sun: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"></circle><line x1="12" y1="2" x2="12" y2="4"></line><line x1="12" y1="20" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="6.34" y2="6.34"></line><line x1="17.66" y1="17.66" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="4" y2="12"></line><line x1="20" y1="12" x2="22" y2="12"></line><line x1="6.34" y1="17.66" x2="4.93" y2="19.07"></line><line x1="19.07" y1="6.34" x2="17.66" y2="4.93"></line></svg>,
             Moon: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>,
-            Eye: () => <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            Eye: () => <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>,
+            Refresh: () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11a9 9 0 0 1 15.5-6L21 7"></path><path d="M21 3v4h-4"></path><path d="M21 13a9 9 0 0 1-15.5 6L3 17"></path><path d="M3 21v-4h4"></path></svg>
         };
 
                 const TICKER_DICTIONARY = [
@@ -837,6 +838,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
             const [stockPrices, setStockPrices] = React.useState({});
             const [renderedChartData, setRenderedChartData] = React.useState([]);
+            const [isRefreshing, setIsRefreshing] = React.useState(false);
             const [fundamentals, setFundamentals] = React.useState({});
             const [quoteInfo, setQuoteInfo] = React.useState({});
             const [notificationStatus, setNotificationStatus] = React.useState(
@@ -960,7 +962,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 return sorted.filter(v => new Date(v.time) >= cutoff && new Date(v.time) <= now);
             };
 
-            const fetchPipelineData = React.useCallback(async () => {
+            const fetchPipelineData = React.useCallback(async (forceRefresh = false) => {
                 setSyncProgress(10);
                 setSyncStatusText('SCANNING CHANNELS...');
                 
@@ -970,7 +972,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
                 let allCached = true;
                 for (let ticker of watchlist) {
-                    const cacheKey = `timeframe-v4_cache_${ticker}_${timeframe}_${hasLiveCredentials ? activeProvider.toLowerCase() : 'fake'}`;
+                    const cacheKey = `timeframe-v5_cache_${ticker}_${timeframe}_${hasLiveCredentials ? activeProvider.toLowerCase() : 'fake'}`;
                     const cachedString = localStorage.getItem(cacheKey);
                     if (cachedString) {
                         const parsedCache = JSON.parse(cachedString);
@@ -985,7 +987,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
                 if (!hasLiveCredentials) {
                     for (let ticker of watchlist) {
-                        const cacheKey = `timeframe-v4_cache_${ticker}_${timeframe}_fake`;
+                        const cacheKey = `timeframe-v5_cache_${ticker}_${timeframe}_fake`;
                         let processedData = generateForcedFakeData(ticker, timeframe);
                         localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: processedData }));
                         
@@ -1009,7 +1011,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
                 // Alpaca OHLC bars must be refreshed independently of cached quote snapshots.
                 // The quote pane can update while the historical candlestick dataset remains stale.
-                if (!allCached || activeProvider === 'ALPACA') {
+                if (!allCached || forceRefresh) {
                     try {
                         setSyncProgress(30);
                         if (activeProvider === 'ALPACA') {
@@ -1068,7 +1070,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                         first: processedData[0],
                                         last: processedData[processedData.length - 1]
                                     });
-                                    const cacheKey = `timeframe-v4_cache_${ticker}_${timeframe}_alpaca`;
+                                    const cacheKey = `timeframe-v5_cache_${ticker}_${timeframe}_alpaca`;
                                     const cachePayload = {
                                         timestamp: Date.now(),
                                         data: processedData
@@ -1104,7 +1106,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                     })).filter(v => v.time && [v.open, v.high, v.low, v.close].every(Number.isFinite));
                                     const visibleTwelveData = getTimeframeBars(normalizedTwelveData, timeframe).slice(-selectedTimeframeConfig.maxCandles);
                                     const processedData = calculateTechnicalIndicators(visibleTwelveData);
-                                    const cacheKey = `timeframe-v4_cache_${ticker}_${timeframe}_twelvedata`;
+                                    const cacheKey = `timeframe-v5_cache_${ticker}_${timeframe}_twelvedata`;
                                     localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: processedData }));
                                 }
                             }
@@ -1134,7 +1136,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                         // Fetch and cache the selected ticker's live quote for the lower-right information panel.
                         const quoteCacheKey = `quote_${activeProvider.toLowerCase()}_${activeStock}`;
                         const quoteCached = JSON.parse(localStorage.getItem(quoteCacheKey) || 'null');
-                        let quoteJson = quoteCached && Date.now() - quoteCached.timestamp < 5 * 60 * 1000 ? quoteCached.data : null;
+                        let quoteJson = !forceRefresh && quoteCached && Date.now() - quoteCached.timestamp < 5 * 60 * 1000 ? quoteCached.data : null;
                         if (!quoteJson) {
                             if (activeProvider === 'ALPACA') {
                                 const quoteRes = await fetch(`https://data.alpaca.markets/v2/stocks/${encodeURIComponent(activeStock)}/snapshot?feed=iex`, {
@@ -1236,7 +1238,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 }
 
                 for (let ticker of watchlist) {
-                    const cacheKey = `timeframe-v4_cache_${ticker}_${timeframe}_${hasLiveCredentials ? activeProvider.toLowerCase() : 'fake'}`;
+                    const cacheKey = `timeframe-v5_cache_${ticker}_${timeframe}_${hasLiveCredentials ? activeProvider.toLowerCase() : 'fake'}`;
                     const cachedString = localStorage.getItem(cacheKey);
                     
                     if (cachedString) {
@@ -1277,12 +1279,16 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 fetchPipelineData();
             }, [activeStock, timeframe, apiKey, alpacaKeyId, alpacaSecretKey, activeProvider, watchlist]);
 
-            // Refresh live quotes periodically while the dashboard remains open.
-            React.useEffect(() => {
-                if (!hasLiveCredentials) return;
-                const timer = setInterval(() => fetchPipelineData(), 60 * 1000);
-                return () => clearInterval(timer);
-            }, [fetchPipelineData, hasLiveCredentials, activeProvider]);
+            // Deliberately no automatic refresh: use the manual refresh control to save API requests.
+            const handleManualRefresh = React.useCallback(async () => {
+                if (isRefreshing) return;
+                setIsRefreshing(true);
+                try {
+                    await fetchPipelineData(true);
+                } finally {
+                    setIsRefreshing(false);
+                }
+            }, [fetchPipelineData, isRefreshing]);
 
             const executeSearchEngine = (e) => {
                 const text = e.target.value;
@@ -1338,6 +1344,10 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                         </div>
 
                         <div class="flex items-center space-x-3">
+                            <button title="Refresh data now" aria-label="Refresh data now" disabled={isRefreshing} onClick={handleManualRefresh} class={`h-[38px] w-[38px] rounded-md font-mono text-xs font-bold flex items-center justify-center border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700' : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-100'}`}>
+                                <span class={isRefreshing ? 'animate-spin' : ''}><Icons.Refresh /></span>
+                            </button>
+
                             <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} class={`min-h-[38px] px-3 rounded-md font-mono text-xs font-bold flex items-center space-x-2 border transition-all cursor-pointer ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700' : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-100'}`}>
                                 {theme === 'dark' ? <Icons.Sun /> : <Icons.Moon />}
                             </button>
