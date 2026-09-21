@@ -932,17 +932,45 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 evaluatePriceAlerts(stockPrices);
             }, [stockPrices, evaluatePriceAlerts]);
 
+            // Canonical timeframe rules shared by Twelve Data and Alpaca.
+            // 1D = latest trading session; 1W = latest five trading sessions;
+            // 1M = rolling calendar month; 1Y = rolling calendar year.
+            const timeframeConfig = {
+                '1D': { tdInterval: '5min', alpacaInterval: '5Min', lookbackDays: 7, outputsize: 500, maxCandles: 100 },
+                '1W': { tdInterval: '15min', alpacaInterval: '15Min', lookbackDays: 14, outputsize: 500, maxCandles: 160 },
+                '1M': { tdInterval: '30min', alpacaInterval: '30Min', lookbackDays: 45, outputsize: 1000, maxCandles: 320 },
+                '1Y': { tdInterval: '1day', alpacaInterval: '1Day', lookbackDays: 400, outputsize: 400, maxCandles: 270 }
+            };
+
+            const getTimeframeBars = (bars, selectedTimeframe) => {
+                if (!Array.isArray(bars) || !bars.length) return [];
+                const sorted = [...bars].sort((a, b) => new Date(a.time) - new Date(b.time));
+                if (selectedTimeframe === '1D') {
+                    const latestSession = new Date(sorted[sorted.length - 1].time).toISOString().slice(0, 10);
+                    return sorted.filter(v => new Date(v.time).toISOString().slice(0, 10) === latestSession);
+                }
+                if (selectedTimeframe === '1W') {
+                    const sessions = [...new Set(sorted.map(v => new Date(v.time).toISOString().slice(0, 10)))].slice(-5);
+                    return sorted.filter(v => sessions.includes(new Date(v.time).toISOString().slice(0, 10)));
+                }
+                const now = new Date();
+                const cutoff = new Date(now);
+                if (selectedTimeframe === '1M') cutoff.setMonth(cutoff.getMonth() - 1);
+                if (selectedTimeframe === '1Y') cutoff.setFullYear(cutoff.getFullYear() - 1);
+                return sorted.filter(v => new Date(v.time) >= cutoff && new Date(v.time) <= now);
+            };
+
             const fetchPipelineData = React.useCallback(async () => {
                 setSyncProgress(10);
                 setSyncStatusText('SCANNING CHANNELS...');
                 
-                const intervalMap = { '1D': '5min', '1W': '15min', '1M': '30min', '1Y': '1day' };
-                const selectedInterval = intervalMap[timeframe] || '1day';
+                const selectedTimeframeConfig = timeframeConfig[timeframe] || timeframeConfig['1D'];
+                const selectedInterval = selectedTimeframeConfig.tdInterval;
                 const localPrices = { ...stockPrices };
 
                 let allCached = true;
                 for (let ticker of watchlist) {
-                    const cacheKey = `cache_${ticker}_${timeframe}_${hasLiveCredentials ? activeProvider.toLowerCase() : 'fake'}`;
+                    const cacheKey = `timeframe-v4_cache_${ticker}_${timeframe}_${hasLiveCredentials ? activeProvider.toLowerCase() : 'fake'}`;
                     const cachedString = localStorage.getItem(cacheKey);
                     if (cachedString) {
                         const parsedCache = JSON.parse(cachedString);
@@ -957,7 +985,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
                 if (!hasLiveCredentials) {
                     for (let ticker of watchlist) {
-                        const cacheKey = `cache_${ticker}_${timeframe}_fake`;
+                        const cacheKey = `timeframe-v4_cache_${ticker}_${timeframe}_fake`;
                         let processedData = generateForcedFakeData(ticker, timeframe);
                         localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: processedData }));
                         
@@ -979,53 +1007,104 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                     return;
                 }
 
-                if (!allCached) {
+                // Alpaca OHLC bars must be refreshed independently of cached quote snapshots.
+                // The quote pane can update while the historical candlestick dataset remains stale.
+                if (!allCached || activeProvider === 'ALPACA') {
                     try {
                         setSyncProgress(30);
                         if (activeProvider === 'ALPACA') {
                             for (let ticker of watchlist) {
-                                const alpacaTimeframe = { '1D': '5Min', '1W': '15Min', '1M': '30Min', '1Y': '1Day' }[timeframe] || '1Day';
-                                const alpacaUrl = `https://data.alpaca.markets/v2/stocks/${encodeURIComponent(ticker)}/bars?timeframe=${alpacaTimeframe}&limit=60&sort=asc&feed=iex`;
+                                const alpacaTimeframe = selectedTimeframeConfig.alpacaInterval;
+                                const alpacaLimit = selectedTimeframeConfig.outputsize;
+                                const chartPointLimit = selectedTimeframeConfig.maxCandles;
+                                // Fetch enough history to apply the same timeframe filter used by Twelve Data.
+                                const rangeDays = selectedTimeframeConfig.lookbackDays;
+                                const alpacaEnd = new Date();
+                                const alpacaStart = new Date(alpacaEnd.getTime() - rangeDays * 86400000);
+                                const startIso = alpacaStart.toISOString();
+                                const endIso = alpacaEnd.toISOString();
+                                const alpacaUrl = `https://data.alpaca.markets/v2/stocks/${encodeURIComponent(ticker)}/bars?timeframe=${alpacaTimeframe}&start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}&limit=${alpacaLimit}&sort=asc&feed=iex&adjustment=all`;
                                 const alpacaRes = await fetch(alpacaUrl, {
                                     headers: {
                                         'APCA-API-KEY-ID': alpacaKeyId,
-                                        'APCA-API-SECRET-KEY': alpacaSecretKey
-                                    }
+                                        'APCA-API-SECRET-KEY': alpacaSecretKey,
+                                        'Accept': 'application/json'
+                                    },
+                                    cache: 'no-store'
                                 });
                                 const alpacaJson = await alpacaRes.json();
-                                if (!alpacaRes.ok || alpacaJson.code) throw new Error(alpacaJson.message || `Alpaca request failed for ${ticker}`);
-                                const bars = Array.isArray(alpacaJson.bars) ? alpacaJson.bars : [];
-                                if (bars.length) {
-                                    const processedData = calculateTechnicalIndicators(bars.map(v => ({
-                                        time: v.t,
-                                        open: Number(v.o),
-                                        high: Number(v.h),
-                                        low: Number(v.l),
-                                        close: Number(v.c),
-                                        volume: Number(v.v || 0)
-                                    })));
-                                    const cacheKey = `cache_${ticker}_${timeframe}_alpaca`;
-                                    localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: processedData }));
+                                if (!alpacaRes.ok || alpacaJson.code || alpacaJson.error) {
+                                    throw new Error(alpacaJson.message || alpacaJson.error || `Alpaca request failed for ${ticker}`);
+                                }
+
+                                // Alpaca returns compact OHLCV keys (t/o/h/l/c/v).
+                                // Normalize them to the same candle shape used by Twelve Data.
+                                const rawBars = Array.isArray(alpacaJson.bars)
+                                    ? alpacaJson.bars
+                                    : (alpacaJson.bars && Array.isArray(alpacaJson.bars[ticker]) ? alpacaJson.bars[ticker] : []);
+                                const normalizedBars = rawBars.map(v => ({
+                                    time: v.t ?? v.timestamp ?? v.time,
+                                    open: Number(v.o ?? v.open),
+                                    high: Number(v.h ?? v.high),
+                                    low: Number(v.l ?? v.low),
+                                    close: Number(v.c ?? v.close),
+                                    volume: Number(v.v ?? v.volume ?? 0)
+                                })).filter(v =>
+                                    v.time &&
+                                    [v.open, v.high, v.low, v.close].every(Number.isFinite) &&
+                                    v.high >= Math.max(v.open, v.close) &&
+                                    v.low <= Math.min(v.open, v.close)
+                                ).sort((a, b) => new Date(a.time) - new Date(b.time));
+
+                                // Apply the canonical timeframe window before rendering and pattern detection.
+                                const sessionBars = getTimeframeBars(normalizedBars, timeframe);
+
+                                if (sessionBars.length) {
+                                    // Render only the latest readable window. Pattern detection runs
+                                    // against exactly the same candles that are visible on the chart.
+                                    const visibleBars = sessionBars.slice(-chartPointLimit);
+                                    const processedData = calculateTechnicalIndicators(visibleBars);
+                                    console.info(`[ALPACA OHLC] ${ticker}: ${processedData.length} visible candles (${alpacaTimeframe})`, {
+                                        first: processedData[0],
+                                        last: processedData[processedData.length - 1]
+                                    });
+                                    const cacheKey = `timeframe-v4_cache_${ticker}_${timeframe}_alpaca`;
+                                    const cachePayload = {
+                                        timestamp: Date.now(),
+                                        data: processedData
+                                    };
+
+                                    // Update the active chart immediately. Do not depend on
+                                    // the subsequent localStorage read to refresh the graph.
+                                    if (ticker === activeStock) {
+                                        setRenderedChartData(processedData);
+                                    }
+
+                                    localStorage.setItem(cacheKey, JSON.stringify(cachePayload));
+                                } else {
+                                    console.warn(`Alpaca returned no OHLC bars for ${ticker}`, alpacaJson);
                                 }
                             }
                         } else {
                             const symbolsParam = watchlist.join(',');
-                            const url = `https://api.twelvedata.com/time_series?symbol=${symbolsParam}&interval=${selectedInterval}&outputsize=60&apikey=${apiKey}`;
+                            const url = `https://api.twelvedata.com/time_series?symbol=${symbolsParam}&interval=${selectedInterval}&outputsize=${selectedTimeframeConfig.outputsize}&apikey=${apiKey}`;
                             const res = await fetch(url);
                             const resJson = await res.json();
                             if (resJson.status === 'error') throw new Error(resJson.message);
                             for (let ticker of watchlist) {
                                 const tickerData = watchlist.length === 1 ? resJson : resJson[ticker];
                                 if (tickerData && tickerData.values) {
-                                    const processedData = calculateTechnicalIndicators(tickerData.values.map(v => ({
+                                    const normalizedTwelveData = tickerData.values.map(v => ({
                                         time: v.datetime,
                                         open: parseFloat(v.open),
                                         high: parseFloat(v.high),
                                         low: parseFloat(v.low),
                                         close: parseFloat(v.close),
                                         volume: parseInt(v.volume || 0)
-                                    })).reverse());
-                                    const cacheKey = `cache_${ticker}_${timeframe}_twelvedata`;
+                                    })).filter(v => v.time && [v.open, v.high, v.low, v.close].every(Number.isFinite));
+                                    const visibleTwelveData = getTimeframeBars(normalizedTwelveData, timeframe).slice(-selectedTimeframeConfig.maxCandles);
+                                    const processedData = calculateTechnicalIndicators(visibleTwelveData);
+                                    const cacheKey = `timeframe-v4_cache_${ticker}_${timeframe}_twelvedata`;
                                     localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: processedData }));
                                 }
                             }
@@ -1157,7 +1236,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 }
 
                 for (let ticker of watchlist) {
-                    const cacheKey = `cache_${ticker}_${timeframe}_${hasLiveCredentials ? activeProvider.toLowerCase() : 'fake'}`;
+                    const cacheKey = `timeframe-v4_cache_${ticker}_${timeframe}_${hasLiveCredentials ? activeProvider.toLowerCase() : 'fake'}`;
                     const cachedString = localStorage.getItem(cacheKey);
                     
                     if (cachedString) {
@@ -1196,7 +1275,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
             React.useEffect(() => {
                 fetchPipelineData();
-            }, [activeStock, timeframe, apiKey, alpacaKeyId, alpacaSecretKey, watchlist]);
+            }, [activeStock, timeframe, apiKey, alpacaKeyId, alpacaSecretKey, activeProvider, watchlist]);
 
             // Refresh live quotes periodically while the dashboard remains open.
             React.useEffect(() => {
@@ -1423,7 +1502,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                 </div>
 
                                 <div class="flex-1 w-full relative pt-4 overflow-hidden">
-                                    <CandlestickChart vectorData={renderedChartData} theme={theme} showPatterns={showPatterns} />
+                                    <CandlestickChart key={`${activeProvider}-${activeStock}-${timeframe}-${renderedChartData.length}-${renderedChartData[renderedChartData.length - 1]?.time || ''}`} vectorData={renderedChartData} theme={theme} showPatterns={showPatterns} />
                                 </div>
                             </div>
                             {showPatternLab && <PatternLab data={renderedChartData} theme={theme} />}
