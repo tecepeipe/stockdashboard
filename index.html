@@ -937,29 +937,57 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             // Canonical timeframe rules shared by Twelve Data and Alpaca.
             // 1D = latest trading session; 1W = latest five trading sessions;
             // 1M = rolling calendar month; 1Y = rolling calendar year.
+            // Single source of truth for both market-data providers.
+            // The interval controls candle granularity; the window controls the displayed period.
             const timeframeConfig = {
-                '1D': { tdInterval: '5min', alpacaInterval: '5Min', lookbackDays: 7, outputsize: 500, maxCandles: 100 },
-                '1W': { tdInterval: '15min', alpacaInterval: '15Min', lookbackDays: 14, outputsize: 500, maxCandles: 160 },
-                '1M': { tdInterval: '30min', alpacaInterval: '30Min', lookbackDays: 45, outputsize: 1000, maxCandles: 320 },
-                '1Y': { tdInterval: '1day', alpacaInterval: '1Day', lookbackDays: 400, outputsize: 400, maxCandles: 270 }
+                '1D': { tdInterval: '5min', alpacaInterval: '5Min', lookbackDays: 10, outputsize: 1000, maxCandles: 100, cacheMs: 5 * 60 * 1000 },
+                '1W': { tdInterval: '15min', alpacaInterval: '15Min', lookbackDays: 21, outputsize: 1000, maxCandles: 160, cacheMs: 15 * 60 * 1000 },
+                '1M': { tdInterval: '30min', alpacaInterval: '30Min', lookbackDays: 70, outputsize: 1000, maxCandles: 320, cacheMs: 30 * 60 * 1000 },
+                '1Y': { tdInterval: '1day', alpacaInterval: '1Day', lookbackDays: 430, outputsize: 1000, maxCandles: 270, cacheMs: 2 * 60 * 60 * 1000 }
             };
 
+            const CACHE_VERSION = 'v6';
+            const getCacheKey = (provider, ticker, selectedTimeframe) =>
+                `timeframe-${CACHE_VERSION}_cache_${ticker}_${selectedTimeframe}_${provider.toLowerCase()}`;
+            const readTimeframeCache = (provider, ticker, selectedTimeframe) => {
+                try {
+                    const raw = localStorage.getItem(getCacheKey(provider, ticker, selectedTimeframe));
+                    if (!raw) return null;
+                    const parsed = JSON.parse(raw);
+                    const config = timeframeConfig[selectedTimeframe] || timeframeConfig['1D'];
+                    if (!Array.isArray(parsed.data) || !parsed.timestamp || Date.now() - parsed.timestamp > config.cacheMs) return null;
+                    return parsed;
+                } catch { return null; }
+            };
+            const writeTimeframeCache = (provider, ticker, selectedTimeframe, data) => {
+                localStorage.setItem(getCacheKey(provider, ticker, selectedTimeframe), JSON.stringify({
+                    version: CACHE_VERSION, timestamp: Date.now(), provider, ticker, timeframe: selectedTimeframe, data
+                }));
+            };
+
+            // Use UTC consistently because API timestamps are UTC. Keep only complete requested windows.
             const getTimeframeBars = (bars, selectedTimeframe) => {
                 if (!Array.isArray(bars) || !bars.length) return [];
-                const sorted = [...bars].sort((a, b) => new Date(a.time) - new Date(b.time));
+                const sorted = [...bars].filter(v => v?.time && !Number.isNaN(new Date(v.time).getTime()))
+                    .sort((a, b) => new Date(a.time) - new Date(b.time));
+                const dayKey = value => new Date(value).toISOString().slice(0, 10);
+                const sessions = [...new Set(sorted.map(v => dayKey(v.time)))];
                 if (selectedTimeframe === '1D') {
-                    const latestSession = new Date(sorted[sorted.length - 1].time).toISOString().slice(0, 10);
-                    return sorted.filter(v => new Date(v.time).toISOString().slice(0, 10) === latestSession);
+                    const latest = sessions.at(-1);
+                    return sorted.filter(v => dayKey(v.time) === latest);
                 }
                 if (selectedTimeframe === '1W') {
-                    const sessions = [...new Set(sorted.map(v => new Date(v.time).toISOString().slice(0, 10)))].slice(-5);
-                    return sorted.filter(v => sessions.includes(new Date(v.time).toISOString().slice(0, 10)));
+                    const recentSessions = sessions.slice(-5);
+                    return sorted.filter(v => recentSessions.includes(dayKey(v.time)));
                 }
                 const now = new Date();
                 const cutoff = new Date(now);
-                if (selectedTimeframe === '1M') cutoff.setMonth(cutoff.getMonth() - 1);
-                if (selectedTimeframe === '1Y') cutoff.setFullYear(cutoff.getFullYear() - 1);
-                return sorted.filter(v => new Date(v.time) >= cutoff && new Date(v.time) <= now);
+                if (selectedTimeframe === '1M') cutoff.setUTCMonth(cutoff.getUTCMonth() - 1);
+                if (selectedTimeframe === '1Y') cutoff.setUTCFullYear(cutoff.getUTCFullYear() - 1);
+                return sorted.filter(v => {
+                    const date = new Date(v.time);
+                    return date >= cutoff && date <= now;
+                });
             };
 
             const fetchPipelineData = React.useCallback(async (forceRefresh = false) => {
@@ -971,25 +999,21 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 const localPrices = { ...stockPrices };
 
                 let allCached = true;
-                for (let ticker of watchlist) {
-                    const cacheKey = `timeframe-v5_cache_${ticker}_${timeframe}_${hasLiveCredentials ? activeProvider.toLowerCase() : 'fake'}`;
-                    const cachedString = localStorage.getItem(cacheKey);
-                    if (cachedString) {
-                        const parsedCache = JSON.parse(cachedString);
-                        const cacheValidityDuration = hasLiveCredentials ? 5 * 60 * 1000 : 10 * 60 * 1000;
-                        if (Date.now() - parsedCache.timestamp > cacheValidityDuration) {
-                            allCached = false;
-                        }
-                    } else {
-                        allCached = false;
+                if (!forceRefresh) {
+                    for (const ticker of watchlist) {
+                        const cached = readTimeframeCache(hasLiveCredentials ? activeProvider : 'FAKE', ticker, timeframe);
+                        if (!cached) { allCached = false; break; }
                     }
+                } else {
+                    allCached = false;
                 }
+
 
                 if (!hasLiveCredentials) {
                     for (let ticker of watchlist) {
-                        const cacheKey = `timeframe-v5_cache_${ticker}_${timeframe}_fake`;
+                        const cacheKey = getCacheKey('FAKE', ticker, timeframe);
                         let processedData = generateForcedFakeData(ticker, timeframe);
-                        localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: processedData }));
+                        writeTimeframeCache('FAKE', ticker, timeframe, processedData);
                         
                         const currentCandle = processedData[processedData.length - 1];
                         const staticMeta = TICKER_DICTIONARY.find(i => i.ticker === ticker) || { cap: '150B', pe: '22.0' };
@@ -1070,11 +1094,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                         first: processedData[0],
                                         last: processedData[processedData.length - 1]
                                     });
-                                    const cacheKey = `timeframe-v5_cache_${ticker}_${timeframe}_alpaca`;
-                                    const cachePayload = {
-                                        timestamp: Date.now(),
-                                        data: processedData
-                                    };
+                                    
 
                                     // Update the active chart immediately. Do not depend on
                                     // the subsequent localStorage read to refresh the graph.
@@ -1082,7 +1102,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                         setRenderedChartData(processedData);
                                     }
 
-                                    localStorage.setItem(cacheKey, JSON.stringify(cachePayload));
+                                    writeTimeframeCache('ALPACA', ticker, timeframe, processedData);
                                 } else {
                                     console.warn(`Alpaca returned no OHLC bars for ${ticker}`, alpacaJson);
                                 }
@@ -1106,8 +1126,8 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                     })).filter(v => v.time && [v.open, v.high, v.low, v.close].every(Number.isFinite));
                                     const visibleTwelveData = getTimeframeBars(normalizedTwelveData, timeframe).slice(-selectedTimeframeConfig.maxCandles);
                                     const processedData = calculateTechnicalIndicators(visibleTwelveData);
-                                    const cacheKey = `timeframe-v5_cache_${ticker}_${timeframe}_twelvedata`;
-                                    localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: processedData }));
+                                    const cacheKey = `timeframe-v6_cache_${ticker}_${timeframe}_twelvedata`;
+                                    writeTimeframeCache('TWELVEDATA', ticker, timeframe, processedData);
                                 }
                             }
                         }
@@ -1238,11 +1258,10 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 }
 
                 for (let ticker of watchlist) {
-                    const cacheKey = `timeframe-v5_cache_${ticker}_${timeframe}_${hasLiveCredentials ? activeProvider.toLowerCase() : 'fake'}`;
-                    const cachedString = localStorage.getItem(cacheKey);
+                    const cachedEntry = readTimeframeCache(hasLiveCredentials ? activeProvider : 'FAKE', ticker, timeframe);
                     
-                    if (cachedString) {
-                        const { data } = JSON.parse(cachedString);
+                    if (cachedEntry) {
+                        const { data } = cachedEntry;
                         if (data && data.length > 0) {
                             const currentCandle = data[data.length - 1];
                             const initialCandle = data[0];
