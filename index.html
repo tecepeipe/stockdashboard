@@ -1640,6 +1640,8 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
         function CandlestickChart({ vectorData, theme, showPatterns }) {
             const [hoverNode, setHoverNode] = React.useState(null);
+            const [rangeSelection, setRangeSelection] = React.useState(null);
+            const [isSelectingRange, setIsSelectingRange] = React.useState(false);
 
             if (!vectorData || vectorData.length === 0) {
                 return <div class="h-full flex items-center justify-center font-mono text-xs text-zinc-700 animate-pulse">CONNECTING INTERFACE PIPELINES...</div>;
@@ -1671,6 +1673,63 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
             const identifiedPatterns = showPatterns ? scanCandlestickPatterns(vectorData) : [];
 
+            // Derive simple horizontal support/resistance levels from repeated swing points.
+            // Levels are calculated from the same visible candles rendered by this chart.
+            const levelTolerance = Math.max(priceDelta * 0.015, 0.01);
+            const swingPoints = [];
+            for (let i = 2; i < vectorData.length - 2; i++) {
+                const d = vectorData[i];
+                const isSwingHigh =
+                    d.high >= vectorData[i - 1].high &&
+                    d.high >= vectorData[i - 2].high &&
+                    d.high >= vectorData[i + 1].high &&
+                    d.high >= vectorData[i + 2].high;
+                const isSwingLow =
+                    d.low <= vectorData[i - 1].low &&
+                    d.low <= vectorData[i - 2].low &&
+                    d.low <= vectorData[i + 1].low &&
+                    d.low <= vectorData[i + 2].low;
+
+                if (isSwingHigh) swingPoints.push({ price: d.high, type: 'resistance' });
+                if (isSwingLow) swingPoints.push({ price: d.low, type: 'support' });
+            }
+
+            const clusterLevels = (points, type) => {
+                const clusters = [];
+                points.filter(p => p.type === type).forEach(point => {
+                    const existing = clusters.find(c => Math.abs(c.price - point.price) <= levelTolerance);
+                    if (existing) {
+                        existing.prices.push(point.price);
+                        existing.price = existing.prices.reduce((a, b) => a + b, 0) / existing.prices.length;
+                        existing.touches++;
+                    } else {
+                        clusters.push({ price: point.price, prices: [point.price], touches: 1, type });
+                    }
+                });
+                return clusters
+                    .filter(c => c.touches >= 2)
+                    .sort((a, b) => b.touches - a.touches || a.price - b.price)
+                    .slice(0, 3);
+            };
+
+            const supportLevels = clusterLevels(swingPoints, 'support');
+            const resistanceLevels = clusterLevels(swingPoints, 'resistance');
+
+            const chartLabelBg = theme === 'dark' ? '#09090b' : '#ffffff';
+            const chartLabelText = theme === 'dark' ? '#a1a1aa' : '#52525b';
+
+            const selectedRange = rangeSelection && vectorData.length > 0
+                ? (() => {
+                    const startIndex = Math.max(0, Math.min(rangeSelection.start, rangeSelection.end));
+                    const endIndex = Math.min(vectorData.length - 1, Math.max(rangeSelection.start, rangeSelection.end));
+                    const startCandle = vectorData[startIndex];
+                    const endCandle = vectorData[endIndex];
+                    const priceChange = endCandle.close - startCandle.close;
+                    const percentChange = startCandle.close !== 0 ? (priceChange / startCandle.close) * 100 : 0;
+                    return { startIndex, endIndex, startCandle, endCandle, priceChange, percentChange };
+                })()
+                : null;
+
             return (
                 <div class="w-full h-full flex flex-col justify-between">
                     <div class={`mb-3 p-2 rounded-sm font-mono text-[10px] flex flex-wrap gap-x-4 gap-y-1 ${theme === 'dark' ? 'bg-zinc-950 border border-zinc-900 text-zinc-500' : 'bg-white border border-zinc-200 text-zinc-600'}`}>
@@ -1684,6 +1743,15 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                 <span>C: <strong class="text-blue-400">${hoverNode.close.toFixed(2)}</strong></span>
                                 <span>RSI: <strong class="text-purple-400">{hoverNode.rsi}</strong></span>
                                 <span>MACD: <strong class="text-blue-500">{hoverNode.macd}</strong></span>
+                                {selectedRange ? (
+                                    <span>RANGE: <strong class={selectedRange.percentChange >= 0 ? 'text-[#00FF66]' : 'text-red-500'}>
+                                        {selectedRange.percentChange >= 0 ? '+' : ''}{selectedRange.percentChange.toFixed(2)}%
+                                    </strong> <span class="text-zinc-500">({selectedRange.priceChange >= 0 ? '+' : ''}${selectedRange.priceChange.toFixed(2)})</span></span>
+                                ) : (
+                                    <span>RANGE: <strong class={hoverNode.close >= hoverNode.open ? 'text-[#00FF66]' : 'text-red-500'}>
+                                        {(((hoverNode.high - hoverNode.low) / hoverNode.low) * 100).toFixed(2)}%
+                                    </strong></span>
+                                )}
                             </>
                         ) : (
                             <span class="italic text-zinc-600">HOVER INTERACTIVE CROSSHAIR NODE ON CHART CELLS</span>
@@ -1699,11 +1767,11 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                             <line x1={0} y1={macdTop} x2={widthDimension} y2={macdTop} stroke="#1f1f23" strokeWidth="1" />
 
                             <g pointerEvents="none">
-                                <rect x="6" y="6" width="142" height="16" rx="2" fill="#09090b" opacity="0.82" />
-                                <text x="12" y="17" fill="#a1a1aa" fontSize="8" fontFamily="monospace" fontWeight="bold">PRICE ACTION // OHLC</text>
-                                <rect x="6" y={rsiTop + 6} width="116" height="16" rx="2" fill="#09090b" opacity="0.82" />
+                                <rect x="6" y="6" width="142" height="16" rx="2" fill={chartLabelBg} opacity="0.92" />
+                                <text x="12" y="17" fill={chartLabelText} fontSize="8" fontFamily="monospace" fontWeight="bold">PRICE ACTION // OHLC</text>
+                                <rect x="6" y={rsiTop + 6} width="116" height="16" rx="2" fill={chartLabelBg} opacity="0.92" />
                                 <text x="12" y={rsiTop + 17} fill="#c084fc" fontSize="8" fontFamily="monospace" fontWeight="bold">RSI (14) // 30 / 70</text>
-                                <rect x="6" y={macdTop + 6} width="142" height="16" rx="2" fill="#09090b" opacity="0.82" />
+                                <rect x="6" y={macdTop + 6} width="142" height="16" rx="2" fill={chartLabelBg} opacity="0.92" />
                                 <text x="12" y={macdTop + 17} fill="#60a5fa" fontSize="8" fontFamily="monospace" fontWeight="bold">MACD (12,26,9)</text>
                                 <text x="155" y={macdTop + 17} fill="#60a5fa" fontSize="7" fontFamily="monospace">MACD</text>
                                 <text x="195" y={macdTop + 17} fill="#eab308" fontSize="7" fontFamily="monospace">SIGNAL</text>
@@ -1720,14 +1788,41 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                 );
                             })()}
 
-                            {Array.from({ length: 4 }).map((_, idx) => {
-                                const calculatedPrice = minPrice + (priceDelta * (idx / 3));
-                                const yPos = candleAreaHeight * (1 - (calculatedPrice - minPrice) / priceDelta);
+                            {[...supportLevels, ...resistanceLevels].map((level, idx) => {
+                                const yPos = candleAreaHeight * (1 - (level.price - minPrice) / priceDelta);
+                                const isResistance = level.type === 'resistance';
+                                const lineColor = isResistance ? '#ef4444' : '#00FF66';
                                 return (
-                                    <g key={`p-grid-${idx}`}>
-                                        <line x1={0} y1={yPos} x2={widthDimension} y2={yPos} stroke="rgba(255,255,255,0.03)" strokeDasharray="2,4" />
-                                        <text x={widthDimension - 5} y={yPos - 4} textAnchor="end" fill="#4b5563" fontSize="8" fontFamily="monospace">
-                                            ${calculatedPrice.toFixed(2)}
+                                    <g key={`sr-${level.type}-${idx}`}>
+                                        <line
+                                            x1={0}
+                                            y1={yPos}
+                                            x2={widthDimension}
+                                            y2={yPos}
+                                            stroke={lineColor}
+                                            strokeOpacity="0.42"
+                                            strokeWidth="1.2"
+                                            strokeDasharray="6,4"
+                                        />
+                                        <rect
+                                            x={widthDimension - 68}
+                                            y={yPos - 9}
+                                            width="63"
+                                            height="12"
+                                            rx="2"
+                                            fill={chartLabelBg}
+                                            opacity="0.92"
+                                        />
+                                        <text
+                                            x={widthDimension - 8}
+                                            y={yPos}
+                                            textAnchor="end"
+                                            fill={lineColor}
+                                            fontSize="7"
+                                            fontFamily="monospace"
+                                            fontWeight="bold"
+                                        >
+                                            {isResistance ? 'R' : 'S'} ${level.price.toFixed(2)}
                                         </text>
                                     </g>
                                 );
@@ -1743,7 +1838,21 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                 );
                             })}
 
-                            {hoverNode && (() => {
+                            {selectedRange && (() => {
+                                const leftX = selectedRange.startIndex * horizontalStep;
+                                const rightX = (selectedRange.endIndex + 1) * horizontalStep;
+                                const startCenterX = selectedRange.startIndex * horizontalStep + (horizontalStep / 2);
+                                const endCenterX = selectedRange.endIndex * horizontalStep + (horizontalStep / 2);
+                                return (
+                                    <g pointerEvents="none">
+                                        <rect x={leftX} y={0} width={Math.max(rightX - leftX, horizontalStep)} height={heightDimension} fill="rgba(59,130,246,0.08)" />
+                                        <line x1={startCenterX} y1={0} x2={startCenterX} y2={heightDimension} stroke="rgba(59,130,246,0.75)" strokeWidth="1" strokeDasharray="4,3" />
+                                        <line x1={endCenterX} y1={0} x2={endCenterX} y2={heightDimension} stroke="rgba(59,130,246,0.75)" strokeWidth="1" strokeDasharray="4,3" />
+                                    </g>
+                                );
+                            })()}
+
+                            {hoverNode && !isSelectingRange && (() => {
                                 const targetIdx = vectorData.indexOf(hoverNode);
                                 if (targetIdx !== -1) {
                                     const centerX = targetIdx * horizontalStep + (horizontalStep / 2);
@@ -1834,8 +1943,19 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                     key={`box-${i}`}
                                     x={i * horizontalStep} y={0} width={horizontalStep} height={heightDimension}
                                     fill="transparent" class="cursor-crosshair pointer-events-auto"
-                                    onMouseEnter={() => setHoverNode(d)}
+                                    onMouseEnter={() => {
+                                        setHoverNode(d);
+                                        if (isSelectingRange) {
+                                            setRangeSelection(prev => prev ? { ...prev, end: i } : { start: i, end: i });
+                                        }
+                                    }}
                                     onMouseLeave={() => setHoverNode(null)}
+                                    onMouseDown={(event) => {
+                                        event.preventDefault();
+                                        setIsSelectingRange(true);
+                                        setRangeSelection({ start: i, end: i });
+                                    }}
+                                    onMouseUp={() => setIsSelectingRange(false)}
                                 />
                             ))}
                         </svg>
