@@ -8,7 +8,9 @@
 - Live site: `https://tecepeipe.github.io/stockdashboard/`
 - Language: HTML/CSS/JavaScript
 - Architecture: intentionally single-file client-side application
-- Main purpose: interactive stock-market visualisation for price action, technical indicators, candlestick reversal patterns, historical pattern statistics, market data, watchlists and browser-side alerts.
+- Main purpose: interactive stock-market visualisation for price action, technical indicators, candlestick reversal patterns, support/resistance levels, historical pattern statistics, market data, watchlists and browser-side alerts.
+- The UI supports multiple languages: English (EN), Brazilian Portuguese (PT-BR), Spanish (ES) and French (FR), with the selected language persisted in browser localStorage.
+- The price chart supports interactive range selection for measuring price and percentage change between selected candles.
 
 ## Core product principles
 
@@ -91,14 +93,27 @@ Expected chart features include:
 - volume
 - overlays such as Bollinger Bands
 - chart grid lines
+- calculated support/resistance overlays
+- interactive candle-range selection with price and percentage-change readout
 
-### Grid lines
+### Grid lines and support/resistance
 
 The faint horizontal lines visible behind OHLC candles are chart grid lines.
 
-They are NOT automatically support/resistance levels.
+The dashboard also has a separate support/resistance feature. Do not confuse the two.
 
-Only label them as support/resistance if an explicit support/resistance calculation and visualisation has been implemented.
+Current support/resistance implementation:
+- examines visible candles for 5-candle swing highs and swing lows
+- a swing high is at least as high as the two candles on either side
+- a swing low is at least as low as the two candles on either side
+- swing highs are candidate resistance; swing lows are candidate support
+- nearby levels are clustered using a tolerance of `max(priceDelta * 0.015, 0.01)`
+- only clusters with at least two touches are retained
+- levels are ranked by touch count and limited to the three most relevant support and three most relevant resistance levels
+- the displayed level price is the average of the clustered touch prices
+- support/resistance lines are visual overlays derived from the candles currently visible to the chart
+
+When modifying this feature, preserve the distinction between grid lines and calculated S/R overlays and document any change to the swing, tolerance, clustering or ranking logic.
 
 Recommended titles:
 - `PRICE + REVERSAL PATTERNS`
@@ -258,6 +273,44 @@ HTTP 204 means no content. Do not attempt normal JSON parsing. Treat it as an ex
 
 A response such as `bars:null` is not usable OHLC data. Do not overwrite valid chart state with it unless the application intentionally wants to clear the chart.
 
+## Multi-language UI
+
+The dashboard currently supports:
+- EN — English
+- PT-BR — Brazilian Portuguese
+- ES — Spanish
+- FR — French
+
+Language state is stored in localStorage under `matrix_language`.
+
+When adding or changing user-facing UI text:
+- add/update translations for all supported languages
+- keep the English source key stable where the translation system depends on it
+- do not translate technical/API identifiers, ticker symbols or raw provider response fields
+- ensure language changes update the visible interface without requiring a page reload
+- preserve `document.documentElement.lang`
+- test language switching in both dark and light themes
+
+## Range selection
+
+The main price chart supports interactive candle-range selection.
+
+The selected range:
+- is defined by a start and end candle index
+- can be dragged across the chart
+- calculates the price change from the first selected candle close to the last selected candle close
+- calculates percentage change relative to the first selected candle close
+- displays the selected range alongside normal hover information
+- renders a visual selection overlay
+
+When modifying range selection:
+- clamp indexes to valid candle bounds
+- handle reversed start/end positions
+- handle an empty/no-selection state
+- avoid division by zero
+- keep the displayed values at two decimal places where appropriate
+- do not confuse selected-range performance with a trading signal or backtest result
+
 ## UI style
 
 The visual language is a dense trading-terminal/dashboard aesthetic:
@@ -324,7 +377,7 @@ Possible roadmap:
 7. expanded watchlists
 8. browser-based price alerts
 9. broader automated detector/unit tests
-10. optional explicit support/resistance calculations
+10. improvements to support/resistance level presentation and tuning
 11. richer chart legends/titles
 12. clearer stale-data/API diagnostics
 
