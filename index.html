@@ -793,6 +793,75 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
         };
         function Dashboard() {
             const [theme, setTheme] = React.useState(() => localStorage.getItem('matrix_theme') || 'dark');
+            const [language, setLanguage] = React.useState(() => localStorage.getItem('matrix_language') || 'en');
+            const languageOptions = [
+                { code: 'pt-BR', label: 'PT-BR', key: 'pt' },
+                { code: 'en', label: 'EN', key: 'en' },
+                { code: 'es', label: 'ES', key: 'es' },
+                { code: 'fr', label: 'FR', key: 'fr' }
+            ];
+            const uiTranslations = {
+                'TRADING TERMINAL // NASDAQ': { pt: 'TERMINAL DE TRADING // NASDAQ', en: 'TRADING TERMINAL // NASDAQ', es: 'TERMINAL DE TRADING // NASDAQ', fr: 'TERMINAL DE TRADING // NASDAQ' },
+                'Stock Dashboard //': { pt: 'Painel de Ações //', en: 'Stock Dashboard //', es: 'Panel de Acciones //', fr: 'Tableau des Actions //' },
+                'DataStream': { pt: 'Fluxo de Dados', en: 'DataStream', es: 'Flujo de Datos', fr: 'Flux de Données' },
+                'CLEAR API': { pt: 'LIMPAR API', en: 'CLEAR API', es: 'LIMPIAR API', fr: 'EFFACER API' },
+                'DATA PROVIDER': { pt: 'PROVEDOR DE DADOS', en: 'DATA PROVIDER', es: 'PROVEEDOR DE DATOS', fr: 'FOURNISSEUR DE DONNÉES' },
+                'Market Data Provider': { pt: 'Provedor de Dados de Mercado', en: 'Market Data Provider', es: 'Proveedor de Datos de Mercado', fr: 'Fournisseur de Données de Marché' },
+                'ALPACA KEY ID': { pt: 'ALPACA ID DA CHAVE', en: 'ALPACA KEY ID', es: 'ID DE CLAVE ALPACA', fr: 'ID DE CLÉ ALPACA' },
+                'ALPACA SECRET KEY': { pt: 'ALPACA CHAVE SECRETA', en: 'ALPACA SECRET KEY', es: 'CLAVE SECRETA ALPACA', fr: 'CLÉ SECRÈTE ALPACA' },
+                'TWELVEDATA API KEY': { pt: 'TWELVEDATA CHAVE DE API', en: 'TWELVEDATA API KEY', es: 'CLAVE API TWELVEDATA', fr: 'CLÉ API TWELVEDATA' },
+                'FINANCIAL STATEMENTS': { pt: 'DEMONSTRAÇÕES FINANCEIRAS', en: 'FINANCIAL STATEMENTS', es: 'ESTADOS FINANCIEROS', fr: 'ÉTATS FINANCIERS' },
+                'PRICE ALERTS': { pt: 'ALERTAS DE PREÇO', en: 'PRICE ALERTS', es: 'ALERTAS DE PRECIO', fr: 'ALERTES DE PRIX' },
+                'PATTERN LAB': { pt: 'LABORATÓRIO DE PADRÕES', en: 'PATTERN LAB', es: 'LABORATORIO DE PATRONES', fr: 'LABORATOIRE DE CONFIGURATIONS' },
+                'PATTERN LAB // HISTORICAL EVENT STUDY': { pt: 'LABORATÓRIO DE PADRÕES // ESTUDO HISTÓRICO', en: 'PATTERN LAB // HISTORICAL EVENT STUDY', es: 'LABORATORIO DE PATRONES // ESTUDIO HISTÓRICO', fr: 'LABORATOIRE DE CONFIGURATIONS // ÉTUDE HISTORIQUE' },
+                'PRICE ACTION // OHLC': { pt: 'PREÇO DA AÇÃO // OHLC', en: 'PRICE ACTION // OHLC', es: 'ACCIÓN DEL PRECIO // OHLC', fr: 'ACTION DES PRIX // OHLC' },
+                'RSI (14) // 30 / 70': { pt: 'RSI (14) // 30 / 70', en: 'RSI (14) // 30 / 70', es: 'RSI (14) // 30 / 70', fr: 'RSI (14) // 30 / 70' },
+                'MACD (12,26,9)': { pt: 'MACD (12,26,9)', en: 'MACD (12,26,9)', es: 'MACD (12,26,9)', fr: 'MACD (12,26,9)' },
+                'QUANTITATIVE DATA MATRIX': { pt: 'MATRIZ DE DADOS QUANTITATIVOS', en: 'QUANTITATIVE DATA MATRIX', es: 'MATRIZ DE DATOS CUANTITATIVOS', fr: 'MATRICE DE DONNÉES QUANTITATIVES' },
+                'Watchlist Matrix Grid': { pt: 'Grade da Lista de Observação', en: 'Watchlist Matrix Grid', es: 'Cuadrícula de Lista de Seguimiento', fr: 'Grille de Liste de Suivi' },
+                'TIMEFRAME': { pt: 'PERÍODO', en: 'TIMEFRAME', es: 'PERÍODO', fr: 'PÉRIODE' },
+                'SIGNALS': { pt: 'SINAIS', en: 'SIGNALS', es: 'SEÑALES', fr: 'SIGNAUX' },
+                'STREAM LOGS //': { pt: 'LOGS DE FLUXO //', en: 'STREAM LOGS //', es: 'REGISTROS DE FLUJO //', fr: 'JOURNAUX DE FLUX //' },
+                'TIMELINE TRACKER ACTIVE': { pt: 'RASTREADOR DE LINHA DO TEMPO ATIVO', en: 'TIMELINE TRACKER ACTIVE', es: 'RASTREADOR DE LÍNEA DE TIEMPO ACTIVO', fr: 'SUIVI DE CHRONOLOGIE ACTIF' },
+                'TRADING TERMINAL // PRO': { pt: 'TERMINAL DE TRADING // PRO', en: 'TRADING TERMINAL // PRO', es: 'TERMINAL DE TRADING // PRO', fr: 'TERMINAL DE TRADING // PRO' },
+                'CONNECT': { pt: 'CONECTAR', en: 'CONNECT', es: 'CONECTAR', fr: 'CONNECTER' },
+                'REMOVE': { pt: 'REMOVER', en: 'REMOVE', es: 'ELIMINAR', fr: 'SUPPRIMER' },
+                'NOTIFY': { pt: 'NOTIFICAR', en: 'NOTIFY', es: 'NOTIFICAR', fr: 'NOTIFIER' },
+                'ABOVE': { pt: 'ACIMA', en: 'ABOVE', es: 'POR ENCIMA', fr: 'AU-DESSUS' },
+                'BELOW': { pt: 'ABAIXO', en: 'BELOW', es: 'POR DEBAJO', fr: 'EN DESSOUS' },
+                'BULLISH REVERSAL': { pt: 'REVERSÃO DE ALTA', en: 'BULLISH REVERSAL', es: 'REVERSIÓN ALCISTA', fr: 'REVERSAL HAUSSIER' },
+                'BEARISH REVERSAL': { pt: 'REVERSÃO DE BAIXA', en: 'BEARISH REVERSAL', es: 'REVERSIÓN BAJISTA', fr: 'REVERSAL BAISSIER' },
+                'BULLISH ': { pt: 'ALTA ', en: 'BULLISH ', es: 'ALCISTA ', fr: 'HAUSSIER ' },
+                'BEARISH ': { pt: 'BAIXA ', en: 'BEARISH ', es: 'BAJISTA ', fr: 'BAISSIER ' },
+                'Current / incomplete signals': { pt: 'Sinais atuais / incompletos', en: 'Current / incomplete signals', es: 'Señales actuales / incompletas', fr: 'Signaux actuels / incomplets' },
+                'Individual occurrences': { pt: 'Ocorrências individuais', en: 'Individual occurrences', es: 'Ocurrencias individuales', fr: 'Occurrences individuelles' },
+                'Pattern results': { pt: 'Resultados dos padrões', en: 'Pattern results', es: 'Resultados de patrones', fr: 'Résultats des configurations' },
+                'Performance Metrics (REV vs NET)': { pt: 'Métricas de Desempenho (REC vs LUCRO)', en: 'Performance Metrics (REV vs NET)', es: 'Métricas de Rendimiento (ING vs NETO)', fr: 'Indicateurs de Performance (CA vs NET)' },
+                'No candlestick patterns detected in the current dataset.': { pt: 'Nenhum padrão de candlestick detectado no conjunto de dados atual.', en: 'No candlestick patterns detected in the current dataset.', es: 'No se detectaron patrones de velas en el conjunto de datos actual.', fr: 'Aucun pattern de chandeliers détecté dans les données actuelles.' },
+                'No completed pattern occurrences in the current dataset.': { pt: 'Nenhuma ocorrência de padrão concluída no conjunto de dados atual.', en: 'No completed pattern occurrences in the current dataset.', es: 'No hay ocurrencias de patrones completadas en el conjunto de datos actual.', fr: 'Aucune occurrence de configuration terminée dans les données actuelles.' },
+                'No historical data segments loaded.': { pt: 'Nenhum segmento de dados históricos carregado.', en: 'No historical data segments loaded.', es: 'No se han cargado segmentos de datos históricos.', fr: 'Aucun segment de données historiques chargé.' }
+            };
+            const translateStaticText = React.useCallback(() => {
+                const lang = language === 'pt-BR' ? 'pt' : language;
+                const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                let node;
+                while (node = walker.nextNode()) {
+                    if (!node.parentElement || ['SCRIPT','STYLE','OPTION'].includes(node.parentElement.tagName)) continue;
+                    const raw = node.nodeValue || '';
+                    const trimmed = raw.trim();
+                    if (!trimmed) continue;
+                    const entry = uiTranslations[trimmed];
+                    if (entry && entry[lang] !== undefined) {
+                        node.nodeValue = raw.replace(trimmed, entry[lang]);
+                    }
+                }
+            }, [language]);
+            React.useEffect(() => {
+                localStorage.setItem('matrix_language', language);
+                document.documentElement.lang = language;
+                const timer = setTimeout(translateStaticText, 0);
+                return () => clearTimeout(timer);
+            }, [language, translateStaticText]);
             const [watchlist, setWatchlist] = React.useState(() => {
                 const saved = localStorage.getItem('matrix_watchlist_v2');
                 return saved ? JSON.parse(saved) : ['AAPL', 'MSFT', 'TSLA', 'NVDA'];
@@ -1366,6 +1435,18 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                             <button title="Refresh data now" aria-label="Refresh data now" disabled={isRefreshing} onClick={handleManualRefresh} class={`h-[38px] w-[38px] rounded-md font-mono text-xs font-bold flex items-center justify-center border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700' : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-100'}`}>
                                 <span class={isRefreshing ? 'animate-spin' : ''}><Icons.Refresh /></span>
                             </button>
+
+                            <div class="relative">
+                                <select
+                                    value={language}
+                                    onChange={e => setLanguage(e.target.value)}
+                                    aria-label="Language"
+                                    title="Language"
+                                    class={`h-[38px] w-[58px] appearance-none text-center rounded-md font-mono text-[10px] font-bold border cursor-pointer focus:outline-none ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700' : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-100'}`}
+                                >
+                                    {languageOptions.map(option => <option key={option.code} value={option.code}>{option.label}</option>)}
+                                </select>
+                            </div>
 
                             <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} class={`min-h-[38px] px-3 rounded-md font-mono text-xs font-bold flex items-center space-x-2 border transition-all cursor-pointer ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700' : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-100'}`}>
                                 {theme === 'dark' ? <Icons.Sun /> : <Icons.Moon />}
