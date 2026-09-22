@@ -115,6 +115,12 @@ Core concepts include:
 
 This project is an interactive visualisation and experimentation tool. Pattern recognition and technical indicators are provided for research and educational purposes and should be validated independently before being used in any investment workflow.
 
+# Security Considerations
+
+This is a browser-based, client-side application. API credentials entered into the dashboard are used directly by the browser to communicate with the selected market-data provider (and stored unencrypted in browser's local storage).
+
+For personal/local use this can be convenient, but API keys should not be embedded in a publicly hosted version of the application. A backend proxy or server-side credential store should be used for production deployments where API credentials must remain private.
+
 ## Possible Future Improvements
 
 - Backtesting with configurable entry, exit, and risk-management rules
