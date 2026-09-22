@@ -1,8 +1,8 @@
-# Stock Visualisation with Twelve Data API
+# Stock Visualisation with Twelve Data / Alpaca API
 
 An interactive, single-file stock market dashboard for exploring price action, technical indicators, candlestick reversal patterns, and market data.
 
-The application starts with **built-in mock market data**, allowing visitors to explore the interface without an API key. When a Twelve Data API key is provided, the dashboard can retrieve market data and use it in the visualisations.
+The application starts with **built-in mock market data**, allowing visitors to explore the interface without an API key. When a Twelve Data/Alpaca API key is provided, the dashboard can retrieve market data and use it in the visualisations.
 
 ## Features
 
