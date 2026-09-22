@@ -9,6 +9,7 @@ The application starts with **built-in mock market data**, allowing visitors to 
 - **Interactive candlestick charts**
   - Visualise historical price movement.
   - Inspect chart data using an interactive crosshair.
+  - Range selection
   - Change the chart timeframe.
 
 - **Candlestick pattern recognition**
@@ -17,6 +18,7 @@ The application starts with **built-in mock market data**, allowing visitors to 
   - Explore detected patterns through the Pattern Lab.
 
 - **Technical indicators**
+  - Support/Resistance levels
   - EMA 9, 21, and 50
   - SMA 20 and 50
   - MACD and signal line
@@ -34,8 +36,8 @@ The application starts with **built-in mock market data**, allowing visitors to 
   - The dashboard remains usable without an API key.
   - Mock data demonstrates the application’s functionality before connecting to live market data.
 
-- **Twelve Data integration**
-  - Connect the dashboard to Twelve Data by supplying an API key.
+- **Multiple Backend integration**
+  - Connect the dashboard to Twelve Data or Alpaca by supplying an API key.
   - Use retrieved market data in the dashboard when the API is configured.
 
 - **Price alerts**
@@ -70,13 +72,13 @@ The dashboard loads with sample market data by default. This allows you to explo
 
 ### 3. Connect Twelve Data
 
-1. Obtain an API key from [Twelve Data](https://twelvedata.com/).
+1. Obtain an API key from [Twelve Data](https://twelvedata.com/) or [Alpaca](https://app.alpaca.markets/) .
 2. Use the dashboard’s connection control.
 3. Enter your API key.
 4. Select an instrument and timeframe.
 5. Load the available market data.
 
-API availability, rate limits, supported symbols, and historical-data access depend on your Twelve Data account and plan.
+API availability, rate limits, supported symbols, and historical-data access depend on your account and plan. (Twelve Data supports 8 queries per minute, whereas Alpaca allows 200 queries per minute)
 
 ## How to Interpret the Patterns
 
@@ -89,9 +91,8 @@ The Pattern Lab’s historical observations are intended for exploration and edu
 ## Data and Privacy
 
 - Mock data is included in the application so that it can be used without an API key.
-- API keys and locally stored preferences may be retained in browser local storage, depending on the application configuration.
-- Do not share your API key publicly or commit it to a public repository.
-- Review Twelve Data’s terms, usage limits, and API-key security recommendations before using the application with a production key.
+- API keys and locally stored preferences are retained in browser local storage.
+- Review Twelve Data/Alpaca’s terms, usage limits, and API-key security recommendations before using the application with a production key.
 
 ## Technology
 
@@ -103,8 +104,9 @@ Core concepts include:
 - Candlestick chart visualisation
 - Technical-indicator calculations
 - Candlestick-pattern recognition
-- Twelve Data API integration
+- Twelve Data/Alpaca API integration
 - Price Alert
+- Caching
 - Browser local storage
 
 ## Project Status
