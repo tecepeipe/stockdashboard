@@ -9,7 +9,7 @@ The application starts with **built-in mock market data**, allowing visitors to 
 - **Interactive candlestick charts**
   - Visualise historical price movement.
   - Inspect chart data using an interactive crosshair.
-  - Range selection
+  - Interactive range selection — click and drag across the chart to measure percentage and absolute price movement between two candles.
   - Change the chart timeframe.
 
 - **Candlestick pattern recognition**
@@ -36,13 +36,13 @@ The application starts with **built-in mock market data**, allowing visitors to 
   - The dashboard remains usable without an API key.
   - Mock data demonstrates the application’s functionality before connecting to live market data.
 
-- **Multiple Backend integration**
+- **Multiple data provider integration**
   - Connect the dashboard to Twelve Data or Alpaca by supplying an API key.
   - Use retrieved market data in the dashboard when the API is configured.
 
 - **Price alerts**
   - Create price-threshold entries for the currently selected instrument.
-  - Default Alerts based on 2y history (if it approaches 2y low)
+  - Creates a default alert when the current price approaches the instrument's two-year low
   - Store alert entries locally in the browser.
 
 - **Single-file application**
@@ -70,7 +70,7 @@ http://localhost:8000
 
 The dashboard loads with sample market data by default. This allows you to explore the charts, indicators, and pattern-recognition features without configuring an API key.
 
-### 3. Connect Twelve Data
+### 3. Connect API Provider
 
 1. Obtain an API key from [Twelve Data](https://twelvedata.com/) or [Alpaca](https://app.alpaca.markets/) .
 2. Use the dashboard’s connection control.
@@ -101,12 +101,14 @@ The project is intentionally implemented as a single HTML file and uses browser-
 Core concepts include:
 
 - HTML, CSS, and JavaScript
+- Dark theme support
 - Candlestick chart visualisation
 - Technical-indicator calculations
 - Candlestick-pattern recognition
 - Twelve Data/Alpaca API integration
 - Price Alert
-- Caching
+- Data caching
+- Multi language support
 - Browser local storage
 
 ## Project Status
