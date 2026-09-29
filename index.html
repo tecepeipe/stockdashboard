@@ -809,6 +809,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 'Market Data Provider': { pt: 'Provedor de Dados de Mercado', en: 'Market Data Provider', es: 'Proveedor de Datos de Mercado', fr: 'Fournisseur de Données de Marché' },
                 'ALPACA KEY ID': { pt: 'ALPACA ID DA CHAVE', en: 'ALPACA KEY ID', es: 'ID DE CLAVE ALPACA', fr: 'ID DE CLÉ ALPACA' },
                 'ALPACA SECRET KEY': { pt: 'ALPACA CHAVE SECRETA', en: 'ALPACA SECRET KEY', es: 'CLAVE SECRETA ALPACA', fr: 'CLÉ SECRÈTE ALPACA' },
+                'ALPHAVANTAGE API KEY': { pt: 'CHAVE API ALPHAVANTAGE', en: 'ALPHAVANTAGE API KEY', es: 'CLAVE API ALPHAVANTAGE', fr: 'CLÉ API ALPHAVANTAGE' },
                 'TWELVEDATA API KEY': { pt: 'TWELVEDATA CHAVE DE API', en: 'TWELVEDATA API KEY', es: 'CLAVE API TWELVEDATA', fr: 'CLÉ API TWELVEDATA' },
                 'FINANCIAL STATEMENTS': { pt: 'DEMONSTRAÇÕES FINANCEIRAS', en: 'FINANCIAL STATEMENTS', es: 'ESTADOS FINANCIEROS', fr: 'ÉTATS FINANCIERS' },
                 'PRICE ALERTS': { pt: 'ALERTAS DE PREÇO', en: 'PRICE ALERTS', es: 'ALERTAS DE PRECIO', fr: 'ALERTES DE PRIX' },
@@ -871,7 +872,8 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             const [apiKey, setApiKey] = React.useState(() => localStorage.getItem('matrix_twelvedata_key') || '');
             const [alpacaKeyId, setAlpacaKeyId] = React.useState(() => localStorage.getItem('matrix_alpaca_key_id') || '');
             const [alpacaSecretKey, setAlpacaSecretKey] = React.useState(() => localStorage.getItem('matrix_alpaca_secret_key') || '');
-            const activeProvider = alpacaKeyId && alpacaSecretKey ? 'ALPACA' : apiKey ? 'TWELVEDATA' : 'DEMO';
+            const [alphaVantageKey, setAlphaVantageKey] = React.useState(() => localStorage.getItem('matrix_alphavantage_key') || '');
+            const activeProvider = alpacaKeyId && alpacaSecretKey ? 'ALPACA' : alphaVantageKey ? 'ALPHAVANTAGE' : apiKey ? 'TWELVEDATA' : 'DEMO';
             const hasLiveCredentials = activeProvider !== 'DEMO';
             const [showApiInput, setShowApiInput] = React.useState(false);
             const [isMaximized, setIsMaximized] = React.useState(false);
@@ -1015,7 +1017,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 '1Y': { tdInterval: '1day', alpacaInterval: '1Day', lookbackDays: 430, outputsize: 1000, maxCandles: 270, cacheMs: 2 * 60 * 60 * 1000 }
             };
 
-            const CACHE_VERSION = 'v6';
+            const CACHE_VERSION = 'v7';
             const getCacheKey = (provider, ticker, selectedTimeframe) =>
                 `timeframe-${CACHE_VERSION}_cache_${ticker}_${selectedTimeframe}_${provider.toLowerCase()}`;
             const readTimeframeCache = (provider, ticker, selectedTimeframe) => {
@@ -1039,7 +1041,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 if (!Array.isArray(bars) || !bars.length) return [];
                 const sorted = [...bars].filter(v => v?.time && !Number.isNaN(new Date(v.time).getTime()))
                     .sort((a, b) => new Date(a.time) - new Date(b.time));
-                const dayKey = value => new Date(value).toISOString().slice(0, 10);
+                const dayKey = value => value?.sessionDate || new Date(value).toISOString().slice(0, 10);
                 const sessions = [...new Set(sorted.map(v => dayKey(v.time)))];
                 if (selectedTimeframe === '1D') {
                     const latest = sessions.at(-1);
@@ -1057,6 +1059,16 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                     const date = new Date(v.time);
                     return date >= cutoff && date <= now;
                 });
+            };
+
+            const fetchAlphaVantageJson = async (params) => {
+                const query = new URLSearchParams({ ...params, apikey: alphaVantageKey });
+                const res = await fetch(`https://www.alphavantage.co/query?${query.toString()}`, { cache: 'no-store' });
+                const json = await res.json();
+                if (!res.ok || json['Error Message'] || json.Note || json.Information) {
+                    throw new Error(json['Error Message'] || json.Note || json.Information || `Alpha Vantage request failed (${res.status})`);
+                }
+                return json;
             };
 
             const fetchPipelineData = React.useCallback(async (forceRefresh = false) => {
@@ -1176,6 +1188,45 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                     console.warn(`Alpaca returned no OHLC bars for ${ticker}`, alpacaJson);
                                 }
                             }
+                        } else if (activeProvider === 'ALPHAVANTAGE') {
+                            for (let ticker of watchlist) {
+                                const chartPointLimit = selectedTimeframeConfig.maxCandles;
+                                const isIntraday = timeframe !== '1Y';
+                                const interval = timeframe === '1D' ? '5min' : timeframe === '1W' ? '15min' : '30min';
+                                const params = isIntraday
+                                    ? { function: 'TIME_SERIES_INTRADAY', symbol: ticker, interval, outputsize: 'full', adjusted: 'true', extended_hours: 'false' }
+                                    : { function: 'TIME_SERIES_DAILY', symbol: ticker, outputsize: 'full' };
+
+                                const avJson = await fetchAlphaVantageJson(params);
+                                const seriesKey = isIntraday ? `Time Series (${interval})` : 'Time Series (Daily)';
+                                const series = avJson[seriesKey];
+                                if (!series || typeof series !== 'object') {
+                                    throw new Error(`Alpha Vantage returned no ${timeframe} time series for ${ticker}`);
+                                }
+
+                                const normalizedAlphaVantage = Object.entries(series).map(([timestamp, v]) => ({
+                                    time: timestamp,
+                                    sessionDate: timestamp.slice(0, 10),
+                                    open: Number(v['1. open']),
+                                    high: Number(v['2. high']),
+                                    low: Number(v['3. low']),
+                                    close: Number(v['4. close']),
+                                    volume: Number(v['5. volume'] || 0)
+                                })).filter(v =>
+                                    v.time && [v.open, v.high, v.low, v.close].every(Number.isFinite) &&
+                                    v.high >= Math.max(v.open, v.close) &&
+                                    v.low <= Math.min(v.open, v.close)
+                                ).sort((a, b) => new Date(a.time) - new Date(b.time));
+
+                                const visibleAlphaVantage = getTimeframeBars(normalizedAlphaVantage, timeframe).slice(-chartPointLimit);
+                                const processedData = calculateTechnicalIndicators(visibleAlphaVantage);
+                                if (processedData.length) {
+                                    if (ticker === activeStock) setRenderedChartData(processedData);
+                                    writeTimeframeCache('ALPHAVANTAGE', ticker, timeframe, processedData);
+                                } else {
+                                    console.warn(`Alpha Vantage returned no usable OHLC bars for ${ticker}`);
+                                }
+                            }
                         } else {
                             const symbolsParam = watchlist.join(',');
                             const url = `https://api.twelvedata.com/time_series?symbol=${symbolsParam}&interval=${selectedInterval}&outputsize=${selectedTimeframeConfig.outputsize}&apikey=${apiKey}`;
@@ -1244,6 +1295,22 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                     low: snapshot.dailyBar?.l,
                                     high: snapshot.dailyBar?.h,
                                     source: 'ALPACA'
+                                };
+                            } else if (activeProvider === 'ALPHAVANTAGE') {
+                                const quoteJsonRaw = await fetchAlphaVantageJson({ function: 'GLOBAL_QUOTE', symbol: activeStock, entitlement: 'realtime' });
+                                const quote = quoteJsonRaw['Global Quote'] || {};
+                                quoteJson = {
+                                    price: Number(quote['05. price'] || 0),
+                                    close: Number(quote['05. price'] || quote['08. previous close'] || 0),
+                                    percent_change: parseFloat(String(quote['10. change percent'] || '0').replace('%', '')) || 0,
+                                    volume: Number(quote['06. volume'] || 0),
+                                    low: Number(quote['04. low'] || 0),
+                                    high: Number(quote['03. high'] || 0),
+                                    open: Number(quote['02. open'] || 0),
+                                    previous_close: Number(quote['08. previous close'] || 0),
+                                    change: Number(quote['09. change'] || 0),
+                                    latest_trading_day: quote['07. latest trading day'],
+                                    source: 'ALPHAVANTAGE'
                                 };
                             } else {
                                 const quoteRes = await fetch(`https://api.twelvedata.com/quote?symbol=${encodeURIComponent(activeStock)}&apikey=${apiKey}`);
@@ -1318,6 +1385,80 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                         structuredLiveFinancials.quarter.earnings = simulatedDataRef.quarter.earnings;
 
                             setLiveFinancials(prev => ({ ...prev, [activeStock]: structuredLiveFinancials }));
+                        } else if (activeProvider === 'ALPHAVANTAGE') {
+                            setSyncProgress(75);
+                            setSyncStatusText('FETCHING ALPHAVANTAGE FUNDAMENTALS...');
+
+                            const [overviewJson, incomeJson, earningsJson] = await Promise.all([
+                                fetchAlphaVantageJson({ function: 'OVERVIEW', symbol: activeStock }),
+                                fetchAlphaVantageJson({ function: 'INCOME_STATEMENT', symbol: activeStock }),
+                                fetchAlphaVantageJson({ function: 'EARNINGS', symbol: activeStock })
+                            ]);
+
+                            if (overviewJson && !overviewJson['Error Message']) {
+                                setFundamentals(prev => ({
+                                    ...prev,
+                                    [activeStock]: {
+                                        market_cap: formatMarketCap(overviewJson.MarketCapitalization),
+                                        pe_ratio: overviewJson.PERatio && overviewJson.PERatio !== 'None' ? parseFloat(overviewJson.PERatio).toFixed(1) : 'N/A'
+                                    }
+                                }));
+                            }
+
+                            const toBillions = value => {
+                                const n = Number(value);
+                                return Number.isFinite(n) ? parseFloat((n / 1e9).toFixed(2)) : 0;
+                            };
+                            const annualReports = Array.isArray(incomeJson.annualReports) ? incomeJson.annualReports : [];
+                            const quarterlyReports = Array.isArray(incomeJson.quarterlyReports) ? incomeJson.quarterlyReports : [];
+                            const annualEarnings = Array.isArray(earningsJson.annualEarnings) ? earningsJson.annualEarnings : [];
+                            const quarterlyEarnings = Array.isArray(earningsJson.quarterlyEarnings) ? earningsJson.quarterlyEarnings : [];
+
+                            const annualPerformance = annualReports.slice(0, 3).map(statement => ({
+                                period: statement.fiscalDateEnding ? statement.fiscalDateEnding.slice(0, 4) : 'N/A',
+                                revenue: toBillions(statement.totalRevenue),
+                                netIncome: toBillions(statement.netIncome)
+                            })).reverse();
+
+                            const quarterLabel = date => {
+                                if (!date) return 'N/A';
+                                const [year, month] = date.split('-');
+                                const m = Number(month);
+                                const q = m <= 3 ? 'Q1' : m <= 6 ? 'Q2' : m <= 9 ? 'Q3' : 'Q4';
+                                return `${q} ${year.slice(2)}`;
+                            };
+
+                            const quarterPerformance = quarterlyReports.slice(0, 3).map(statement => ({
+                                period: quarterLabel(statement.fiscalDateEnding),
+                                revenue: toBillions(statement.totalRevenue),
+                                netIncome: toBillions(statement.netIncome)
+                            })).reverse();
+
+                            const annualEarningsData = annualEarnings.slice(0, 3).map(item => ({
+                                period: item.fiscalDateEnding ? item.fiscalDateEnding.slice(0, 4) : 'N/A',
+                                actual: Number(item.reportedEPS),
+                                forecast: Number(item.reportedEPS)
+                            })).filter(item => Number.isFinite(item.actual)).reverse();
+
+                            const quarterlyEarningsData = quarterlyEarnings.slice(0, 3).map(item => ({
+                                period: quarterLabel(item.fiscalDateEnding),
+                                actual: Number(item.reportedEPS),
+                                forecast: Number(item.estimatedEPS),
+                                surprise: Number(item.surprisePercentage)
+                            })).filter(item => Number.isFinite(item.actual)).reverse();
+
+                            const simulatedDataRef = generateFinancials(activeStock, null);
+                            const structuredAlphaFinancials = {
+                                annual: {
+                                    performance: annualPerformance.length ? annualPerformance : simulatedDataRef.annual.performance,
+                                    earnings: annualEarningsData.length ? annualEarningsData : simulatedDataRef.annual.earnings
+                                },
+                                quarter: {
+                                    performance: quarterPerformance.length ? quarterPerformance : simulatedDataRef.quarter.performance,
+                                    earnings: quarterlyEarningsData.length ? quarterlyEarningsData : simulatedDataRef.quarter.earnings
+                                }
+                            };
+                            setLiveFinancials(prev => ({ ...prev, [activeStock]: structuredAlphaFinancials }));
                         }
 
                     } catch (e) {
@@ -1361,11 +1502,11 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 setStockPrices(localPrices);
                 setSyncProgress(100);
                 if (hasLiveCredentials) setSyncStatusText(`${activeProvider} LIVE VECTOR FEED ACTIVE`);
-            }, [watchlist, timeframe, apiKey, alpacaKeyId, alpacaSecretKey, activeProvider, hasLiveCredentials, activeStock, fundamentals]);
+            }, [watchlist, timeframe, apiKey, alphaVantageKey, alpacaKeyId, alpacaSecretKey, activeProvider, hasLiveCredentials, activeStock, fundamentals]);
 
             React.useEffect(() => {
                 fetchPipelineData();
-            }, [activeStock, timeframe, apiKey, alpacaKeyId, alpacaSecretKey, activeProvider, watchlist]);
+            }, [activeStock, timeframe, apiKey, alphaVantageKey, alpacaKeyId, alpacaSecretKey, activeProvider, watchlist]);
 
             // Deliberately no automatic refresh: use the manual refresh control to save API requests.
             const handleManualRefresh = React.useCallback(async () => {
@@ -1410,7 +1551,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             
             // Resolve final active statements object state (Prioritize true dynamic live financial metrics, fallback to mock matrix if key missing)
             const showFinancials = activeProvider !== 'ALPACA';
-            const activeFinancialsData = activeProvider === 'TWELVEDATA' && liveFinancials[activeStock]
+            const activeFinancialsData = ['TWELVEDATA', 'ALPHAVANTAGE'].includes(activeProvider) && liveFinancials[activeStock]
                 ? liveFinancials[activeStock]
                 : showFinancials ? generateFinancials(activeStock, activeLiveCap) : { annual: { performance: [], earnings: [] }, quarter: { performance: [], earnings: [] } };
 
@@ -1454,7 +1595,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
                             <button onClick={() => setShowApiInput(!showApiInput)} class={`min-h-[38px] px-3 rounded-md border text-xs flex items-center space-x-2 font-mono transition-all cursor-pointer ${hasLiveCredentials ? 'border-[#00FF66]/40 text-[#00FF66]' : theme === 'dark' ? 'border-zinc-700 text-zinc-500' : 'border-zinc-300 text-zinc-500'}`}>
                                 <Icons.Key />
-                                <span class="hidden sm:inline font-bold">{activeProvider === 'ALPACA' ? 'ALPACA API' : activeProvider === 'TWELVEDATA' ? 'TWELVEDATA API' : 'DATA PROVIDER'}</span>
+                                <span class="hidden sm:inline font-bold">{activeProvider === 'ALPACA' ? 'ALPACA API' : activeProvider === 'ALPHAVANTAGE' ? 'ALPHAVANTAGE API' : activeProvider === 'TWELVEDATA' ? 'TWELVEDATA API' : 'DATA PROVIDER'}</span>
                             </button>
 
                             {hasLiveCredentials && (
@@ -1465,6 +1606,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                     localStorage.removeItem('matrix_twelvedata_key');
                                     localStorage.removeItem('matrix_alpaca_key_id');
                                     localStorage.removeItem('matrix_alpaca_secret_key');
+                                    localStorage.removeItem('matrix_alphavantage_key');
                                 }} class={`min-h-[38px] px-3 rounded-md border text-xs flex items-center space-x-2 font-mono transition-all cursor-pointer border-red-500/40 text-red-500`}>
                                     <Icons.Trash />
                                     <span class="hidden sm:inline font-bold">CLEAR API</span>
@@ -1495,20 +1637,27 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                         <input type="password" id="alpaca_secret_key_field" placeholder="OPTIONAL ALPACA SECRET KEY" defaultValue={alpacaSecretKey} class={`w-full border rounded-md px-3 text-xs font-mono h-10 focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-[#00FF66]' : 'bg-zinc-50 border-zinc-300 text-[#00FF66]'}`} />
                                     </div>
                                     <div class="space-y-1">
+                                        <label class="text-[10px] font-mono text-zinc-500">ALPHAVANTAGE API KEY</label>
+                                        <input type="password" id="alphavantage_api_key_field" placeholder="OPTIONAL ALPHAVANTAGE KEY" defaultValue={alphaVantageKey} class={`w-full border rounded-md px-3 text-xs font-mono h-10 focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-[#00FF66]' : 'bg-zinc-50 border-zinc-300 text-[#00FF66]'}`} />
+                                    </div>
+                                    <div class="space-y-1">
                                         <label class="text-[10px] font-mono text-zinc-500">TWELVEDATA API KEY</label>
                                         <input type="password" id="api_input_field" placeholder="OPTIONAL TWELVEDATA KEY" defaultValue={apiKey} class={`w-full border rounded-md px-3 text-xs font-mono h-10 focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-[#00FF66]' : 'bg-zinc-50 border-zinc-300 text-[#00FF66]'}`} />
                                     </div>
                                 </div>
-                                <div class="text-[10px] font-mono text-zinc-500">If both Alpaca fields are provided, Alpaca is used. Otherwise, a Twelve Data key is used.<br />Credentials are stored in this browser's localStorage.</div>
+                                <div class="text-[10px] font-mono text-zinc-500">If both Alpaca fields are provided, Alpaca is used. Otherwise Alpha Vantage is used when its key is present, then Twelve Data.<br />Credentials are stored in this browser's localStorage.</div>
                                 <div class="flex justify-end">
                                     <button onClick={() => {
                                         const twelveVal = document.getElementById('api_input_field').value.trim();
+                                        const alphaVal = document.getElementById('alphavantage_api_key_field').value.trim();
                                         const alpacaIdVal = document.getElementById('alpaca_key_id_field').value.trim();
                                         const alpacaSecretVal = document.getElementById('alpaca_secret_key_field').value.trim();
                                         setApiKey(twelveVal);
+                                        setAlphaVantageKey(alphaVal);
                                         setAlpacaKeyId(alpacaIdVal);
                                         setAlpacaSecretKey(alpacaSecretVal);
                                         localStorage.setItem('matrix_twelvedata_key', twelveVal);
+                                        localStorage.setItem('matrix_alphavantage_key', alphaVal);
                                         localStorage.setItem('matrix_alpaca_key_id', alpacaIdVal);
                                         localStorage.setItem('matrix_alpaca_secret_key', alpacaSecretVal);
                                         setShowApiInput(false);
