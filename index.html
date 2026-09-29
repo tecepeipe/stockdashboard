@@ -1571,42 +1571,10 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 return [];
             }, [activeProvider, apiKey, alpacaKeyId, alpacaSecretKey, hasLiveCredentials, fetchAlphaVantageJson]);
 
-            const executeSearchEngine = (e) => {
-                const text = e.target.value;
-                setSearchQuery(text);
-                const query = text.trim();
-                if (!query) {
-                    setSuggestions([]);
-                    return;
-                }
-                const localMatches = TICKER_DICTIONARY.filter(item =>
-                    item.ticker.toLowerCase().includes(query.toLowerCase()) ||
-                    item.name.toLowerCase().includes(query.toLowerCase())
-                );
-                if (!hasLiveCredentials || query.length < 2) {
-                    setSuggestions(localMatches);
-                    return;
-                }
-                setSuggestions(localMatches);
-                clearTimeout(window.__stockDashboardSearchTimer);
-                window.__stockDashboardSearchTimer = setTimeout(async () => {
-                    const liveMatches = await searchLiveSymbols(query);
-                    if (liveMatches.length) {
-                        const merged = [...localMatches];
-                        liveMatches.forEach(item => {
-                            if (!merged.some(existing => existing.ticker === item.ticker)) merged.push(item);
-                        });
-                        setSuggestions(merged.slice(0, 8));
-                    } else if (!localMatches.length) {
-                        setSuggestions([]);
-                    }
-                }, 350);
-            };
-
-            const selectEngineNode = (node) => {
+            const addSearchSymbol = (node) => {
                 const ticker = String(node.ticker || '').toUpperCase();
                 if (!ticker) return;
-                if (!watchlist.includes(ticker)) setWatchlist([...watchlist, ticker]);
+                setWatchlist(prev => prev.includes(ticker) ? prev : [...prev, ticker]);
                 setResolvedSymbols(prev => ({
                     ...prev,
                     [ticker]: {
@@ -1618,6 +1586,42 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 setActiveStock(ticker);
                 setSearchQuery('');
                 setSuggestions([]);
+            };
+
+            const executeSearchEngine = (e) => {
+                setSearchQuery(e.target.value);
+            };
+
+            React.useEffect(() => {
+                const query = searchQuery.trim();
+                clearTimeout(window.__stockDashboardSearchTimer);
+                if (!query) {
+                    setSuggestions([]);
+                    return;
+                }
+
+                const localMatches = TICKER_DICTIONARY.filter(item =>
+                    item.ticker.toLowerCase().includes(query.toLowerCase()) ||
+                    item.name.toLowerCase().includes(query.toLowerCase())
+                );
+                setSuggestions(localMatches);
+
+                if (!hasLiveCredentials || query.length < 2) return;
+
+                window.__stockDashboardSearchTimer = setTimeout(async () => {
+                    const liveMatches = await searchLiveSymbols(query);
+                    const merged = [...localMatches];
+                    liveMatches.forEach(item => {
+                        if (!merged.some(existing => existing.ticker === item.ticker)) merged.push(item);
+                    });
+                    setSuggestions(merged.slice(0, 8));
+                }, 300);
+
+                return () => clearTimeout(window.__stockDashboardSearchTimer);
+            }, [searchQuery, hasLiveCredentials, searchLiveSymbols]);
+
+            const selectEngineNode = (node) => {
+                addSearchSymbol(node);
             };
 
             const activeCompanyMeta = resolvedSymbols[activeStock] ||
@@ -1754,15 +1758,12 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                 <div class="relative">
                                     <input type="text" value={searchQuery} onChange={executeSearchEngine} onKeyDown={async (e) => {
                                         if (e.key !== 'Enter') return;
-                                        const query = searchQuery.trim();
-                                        if (!query || !hasLiveCredentials) return;
-                                        const exact = suggestions.find(s => s.ticker?.toUpperCase() === query.toUpperCase());
-                                        if (exact) {
-                                            selectEngineNode(exact);
-                                            return;
+                                        const exact = suggestions.find(s => s.ticker?.toUpperCase() === searchQuery.trim().toUpperCase());
+                                        if (exact) addSearchSymbol(exact);
+                                        else if (hasLiveCredentials && searchQuery.trim()) {
+                                            const matches = await searchLiveSymbols(searchQuery.trim());
+                                            if (matches.length) addSearchSymbol(matches[0]);
                                         }
-                                        const matches = await searchLiveSymbols(query);
-                                        if (matches.length) selectEngineNode(matches[0]);
                                     }} placeholder="SCAN CORE EXCHANGE INDEX..." class={`w-full border rounded-md pl-10 pr-4 py-2 text-xs font-mono uppercase focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-white placeholder-zinc-600' : 'bg-white border-zinc-300 text-zinc-800 placeholder-zinc-400'}`} />
                                     <span class={`absolute left-3 top-2.5 ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}><Icons.Search /></span>
                                 </div>
@@ -1770,9 +1771,14 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                 {suggestions.length > 0 && (
                                     <div class={`absolute left-4 right-4 mt-1 border rounded-md shadow-2xl divide-y z-50 ${theme === 'dark' ? 'bg-zinc-950 border-zinc-800 divide-zinc-900' : 'bg-white border-zinc-200 divide-zinc-100'}`}>
                                         {suggestions.map(s => (
-                                            <div key={s.ticker} onClick={() => selectEngineNode(s)} class={`p-3 flex justify-between items-center cursor-pointer text-xs font-mono ${theme === 'dark' ? 'hover:bg-zinc-900' : 'hover:bg-zinc-50'}`}>
-                                                <span class={`font-bold ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>{s.ticker} <span class="text-[9px] text-zinc-500">({s.exchange})</span></span>
-                                                <span class="text-zinc-500 truncate max-w-[150px]">{s.name}</span>
+                                            <div key={s.ticker} class={`p-3 flex items-center gap-3 text-xs font-mono ${theme === 'dark' ? 'hover:bg-zinc-900' : 'hover:bg-zinc-50'}`}>
+                                                <button type="button" title={`Add ${s.ticker} to watchlist`} onClick={() => addSearchSymbol(s)} class={`w-7 h-7 shrink-0 flex items-center justify-center rounded border transition-colors ${theme === 'dark' ? 'border-zinc-700 text-zinc-400 hover:text-[#00FF66] hover:border-[#00FF66]' : 'border-zinc-300 text-zinc-500 hover:text-green-600 hover:border-green-500'}`}>
+                                                    <Icons.Plus />
+                                                </button>
+                                                <div class="min-w-0 flex-1 cursor-pointer" onClick={() => addSearchSymbol(s)}>
+                                                    <div class={`font-bold ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>{s.ticker} <span class="text-[9px] text-zinc-500">({s.exchange})</span></div>
+                                                    <div class="text-zinc-500 truncate">{s.name}</div>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
