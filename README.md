@@ -1,4 +1,4 @@
-# Stock Visualisation with Twelve Data / Alpaca / Alpha Vantage APIs
+# Stock Visualisation with multiple backend APIs
 
 An interactive, single-file stock market dashboard for exploring price action, technical indicators, candlestick reversal patterns, and market data.
 
