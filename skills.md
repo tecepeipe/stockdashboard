@@ -398,3 +398,8 @@ Possible roadmap:
 12. clearer stale-data/API diagnostics
 
 Backtesting must be kept distinct from Pattern Lab: Pattern Lab describes historical pattern outcomes; a backtester evaluates an explicit trading strategy with entry/exit/position rules and should account for look-ahead bias, incomplete bars and transaction assumptions.
+
+
+### Live ticker discovery
+
+When a live API provider is configured, the ticker search must query the provider's instrument catalog instead of relying only on `TICKER_DICTIONARY`. Twelve Data uses `/symbol_search` and filters US NASDAQ/NYSE results; Alpha Vantage uses `SYMBOL_SEARCH`; Alpaca validates the exact ticker against its US equity asset endpoint and accepts NASDAQ/NYSE. Mock mode continues to use the local dictionary. Unknown live tickers can be added to the watchlist and then flow through the normal provider OHLCV pipeline.
