@@ -1,8 +1,8 @@
-# Stock Visualisation with Twelve Data / Alpaca API
+# Stock Visualisation with Twelve Data / Alpaca / Alpha Vantage APIs
 
 An interactive, single-file stock market dashboard for exploring price action, technical indicators, candlestick reversal patterns, and market data.
 
-The application starts with **built-in mock market data**, allowing visitors to explore the interface without an API key. When a Twelve Data/Alpaca API key is provided, the dashboard can retrieve market data and use it in the visualisations.
+The application starts with **built-in mock market data**, allowing visitors to explore the interface without an API key. When a Twelve Data, Alpaca, or Alpha Vantage API credential is provided, the dashboard can retrieve provider data and use it in the visualisations.
 
 ## Features
 
@@ -72,13 +72,13 @@ The dashboard loads with sample market data by default. This allows you to explo
 
 ### 3. Connect API Provider
 
-1. Obtain an API key from [Twelve Data](https://twelvedata.com/) or [Alpaca](https://app.alpaca.markets/) .
+1. Obtain credentials from [Twelve Data](https://twelvedata.com/), [Alpaca](https://app.alpaca.markets/), or [Alpha Vantage](https://www.alphavantage.co/).
 2. Use the dashboard’s connection control.
 3. Enter your API key.
 4. Select an instrument and timeframe.
 5. Load the available market data.
 
-API availability, rate limits, supported symbols, and historical-data access depend on your account and plan. (Twelve Data supports 8 queries per minute, whereas Alpaca allows 200 queries per minute)
+API availability, rate limits, supported symbols, and historical-data access depend on your account and plan. Alpha Vantage's current intraday endpoint is premium, which matches the dashboard's intraday timeframe design.
 
 ## How to Interpret the Patterns
 
@@ -92,6 +92,7 @@ The Pattern Lab’s historical observations are intended for exploration and edu
 
 - Mock data is included in the application so that it can be used without an API key.
 - API keys and locally stored preferences are retained in browser local storage.
+- Alpha Vantage credentials are used directly by the browser for API requests; premium intraday/realtime access depends on the Alpha Vantage plan and entitlement.
 - Review Twelve Data/Alpaca’s terms, usage limits, and API-key security recommendations before using the application with a production key.
 
 ## Technology
@@ -105,7 +106,7 @@ Core concepts include:
 - Candlestick chart visualisation
 - Technical-indicator calculations
 - Candlestick-pattern recognition
-- Twelve Data/Alpaca API integration
+- Twelve Data/Alpaca/Alpha Vantage API integration
 - Price Alert
 - Data caching
 - Multi language support
