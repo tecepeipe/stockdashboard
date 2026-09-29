@@ -66,7 +66,7 @@ Current mapping:
 - `1M`: `TIME_SERIES_INTRADAY` at 30-minute resolution
 - `1Y`: `TIME_SERIES_DAILY` full history
 - Intraday requests use adjusted OHLCV and regular market hours only.
-- Alpha Vantage intraday history is a premium endpoint, so the dashboard's existing intraday experience should be considered a premium-provider capability. citeturn3view1
+- Alpha Vantage intraday history is a premium endpoint, so the dashboard's existing intraday experience should be considered a premium-provider capability.
 - `GLOBAL_QUOTE` supplies the live quote panel when realtime entitlement is available.
 - `OVERVIEW` supplies market-cap/P-E metadata; `INCOME_STATEMENT` supplies annual/quarterly revenue and net income; `EARNINGS` supplies annual/quarterly EPS data.
 - Alpha Vantage technical-indicator endpoints exist, but the dashboard continues to calculate its existing indicators locally so all providers use identical indicator logic.
