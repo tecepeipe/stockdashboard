@@ -37,7 +37,7 @@ The application starts with **built-in mock market data**, allowing visitors to 
   - Mock data demonstrates the application’s functionality before connecting to live market data.
 
 - **Multiple data provider integration**
-  - Connect the dashboard to Twelve Data or Alpaca by supplying an API key.
+  - Connect the dashboard to Twelve Data, Alpha Vantage or Alpaca by supplying an API key.
   - Use retrieved market data in the dashboard when the API is configured.
 
 - **Price alerts**
