@@ -133,3 +133,8 @@ For personal/local use this can be convenient, but API keys should not be embedd
 ## Disclaimer
 
 This project is provided for informational and educational purposes only. It is not financial advice, and no pattern, indicator, statistic, or visualisation should be interpreted as a recommendation to buy or sell a financial instrument. Always perform your own research and consider consulting a qualified financial professional.
+
+
+### Live ticker discovery
+
+When a live API provider is configured, the ticker search must query the provider's instrument catalog instead of relying only on `TICKER_DICTIONARY`. Twelve Data uses `/symbol_search` and filters US NASDAQ/NYSE results; Alpha Vantage uses `SYMBOL_SEARCH`; Alpaca validates the exact ticker against its US equity asset endpoint and accepts NASDAQ/NYSE. Mock mode continues to use the local dictionary. Unknown live tickers can be added to the watchlist and then flow through the normal provider OHLCV pipeline.
