@@ -56,6 +56,22 @@ The dashboard has been designed around:
 
 Provider-specific response handling must remain separate from the application's normalized internal model.
 
+### Alpha Vantage
+
+Alpha Vantage is integrated as a fourth live provider. The provider adapter must normalize Alpha Vantage responses into the same internal OHLCV model before indicators, candlestick detection, support/resistance, Pattern Lab and chart rendering run.
+
+Current mapping:
+- `1D`: `TIME_SERIES_INTRADAY` at 5-minute resolution
+- `1W`: `TIME_SERIES_INTRADAY` at 15-minute resolution
+- `1M`: `TIME_SERIES_INTRADAY` at 30-minute resolution
+- `1Y`: `TIME_SERIES_DAILY` full history
+- Intraday requests use adjusted OHLCV and regular market hours only.
+- Alpha Vantage intraday history is a premium endpoint, so the dashboard's existing intraday experience should be considered a premium-provider capability. citeturn3view1
+- `GLOBAL_QUOTE` supplies the live quote panel when realtime entitlement is available.
+- `OVERVIEW` supplies market-cap/P-E metadata; `INCOME_STATEMENT` supplies annual/quarterly revenue and net income; `EARNINGS` supplies annual/quarterly EPS data.
+- Alpha Vantage technical-indicator endpoints exist, but the dashboard continues to calculate its existing indicators locally so all providers use identical indicator logic.
+- Alpha Vantage timestamps include a provider session date in normalized bars so the dashboard's 1D/1W session filtering is not affected by the user's local timezone.
+
 Preferred pipeline:
 
 `provider response -> validation -> normalization -> application state -> indicators/patterns -> chart/UI`
