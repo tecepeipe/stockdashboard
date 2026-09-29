@@ -879,6 +879,8 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             const [isMaximized, setIsMaximized] = React.useState(false);
             const [searchQuery, setSearchQuery] = React.useState('');
             const [suggestions, setSuggestions] = React.useState([]);
+            const liveSearchRequestRef = React.useRef(0);
+            const [resolvedSymbols, setResolvedSymbols] = React.useState({});
             const [financialView, setFinancialView] = React.useState('annual');
             const [syncProgress, setSyncProgress] = React.useState(100);
             const [syncStatusText, setSyncStatusText] = React.useState('SYSTEM_READY');
@@ -1519,30 +1521,108 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 }
             }, [fetchPipelineData, isRefreshing]);
 
+            const searchLiveSymbols = React.useCallback(async (text) => {
+                const query = text.trim();
+                if (!hasLiveCredentials || query.length < 2) return [];
+                const requestId = ++liveSearchRequestRef.current;
+                try {
+                    if (activeProvider === 'ALPHAVANTAGE') {
+                        const json = await fetchAlphaVantageJson({ function: 'SYMBOL_SEARCH', keywords: query });
+                        if (requestId !== liveSearchRequestRef.current) return [];
+                        return (json.bestMatches || []).slice(0, 8).map(item => ({
+                            ticker: item['1. symbol'], name: item['2. name'],
+                            exchange: item['4. region'] === 'United States' ? 'US' : item['4. region'],
+                            currency: item['8. currency'], source: 'ALPHAVANTAGE'
+                        })).filter(item => item.ticker);
+                    }
+                    if (activeProvider === 'TWELVEDATA') {
+                        const url = 'https://api.twelvedata.com/symbol_search?symbol=' + encodeURIComponent(query) + '&apikey=' + encodeURIComponent(apiKey);
+                        const res = await fetch(url, { cache: 'no-store' });
+                        const json = await res.json();
+                        if (requestId !== liveSearchRequestRef.current) return [];
+                        if (!res.ok || json.status === 'error') throw new Error(json.message || 'Twelve Data symbol search failed');
+                        return (json.data || []).filter(item =>
+                            item.country === 'United States' && ['NASDAQ', 'NYSE'].includes(item.exchange)
+                        ).slice(0, 8).map(item => ({
+                            ticker: item.symbol, name: item.instrument_name, exchange: item.exchange,
+                            currency: item.currency, source: 'TWELVEDATA'
+                        }));
+                    }
+                    if (activeProvider === 'ALPACA') {
+                        const upper = query.toUpperCase();
+                        const res = await fetch('https://paper-api.alpaca.markets/v2/assets/' + encodeURIComponent(upper), {
+                            headers: {
+                                'APCA-API-KEY-ID': alpacaKeyId,
+                                'APCA-API-SECRET-KEY': alpacaSecretKey,
+                                'Accept': 'application/json'
+                            }, cache: 'no-store'
+                        });
+                        if (!res.ok) return [];
+                        const item = await res.json();
+                        if (item.status === 'active' && item.asset_class === 'us_equity' &&
+                            ['NASDAQ', 'NYSE'].includes(item.exchange)) {
+                            return [{ ticker: item.symbol, name: item.name, exchange: item.exchange,
+                                currency: item.currency, source: 'ALPACA' }];
+                        }
+                    }
+                } catch (err) {
+                    console.warn('[SYMBOL SEARCH]', activeProvider, err);
+                }
+                return [];
+            }, [activeProvider, apiKey, alpacaKeyId, alpacaSecretKey, hasLiveCredentials, fetchAlphaVantageJson]);
+
             const executeSearchEngine = (e) => {
                 const text = e.target.value;
                 setSearchQuery(text);
-                if (!text.trim()) {
+                const query = text.trim();
+                if (!query) {
                     setSuggestions([]);
                     return;
                 }
-                const match = TICKER_DICTIONARY.filter(item => 
-                    item.ticker.toLowerCase().includes(text.toLowerCase()) || 
-                    item.name.toLowerCase().includes(text.toLowerCase())
+                const localMatches = TICKER_DICTIONARY.filter(item =>
+                    item.ticker.toLowerCase().includes(query.toLowerCase()) ||
+                    item.name.toLowerCase().includes(query.toLowerCase())
                 );
-                setSuggestions(match);
+                if (!hasLiveCredentials || query.length < 2) {
+                    setSuggestions(localMatches);
+                    return;
+                }
+                setSuggestions(localMatches);
+                clearTimeout(window.__stockDashboardSearchTimer);
+                window.__stockDashboardSearchTimer = setTimeout(async () => {
+                    const liveMatches = await searchLiveSymbols(query);
+                    if (liveMatches.length) {
+                        const merged = [...localMatches];
+                        liveMatches.forEach(item => {
+                            if (!merged.some(existing => existing.ticker === item.ticker)) merged.push(item);
+                        });
+                        setSuggestions(merged.slice(0, 8));
+                    } else if (!localMatches.length) {
+                        setSuggestions([]);
+                    }
+                }, 350);
             };
 
             const selectEngineNode = (node) => {
-                if (!watchlist.includes(node.ticker)) {
-                    setWatchlist([...watchlist, node.ticker]);
-                }
-                setActiveStock(node.ticker);
+                const ticker = String(node.ticker || '').toUpperCase();
+                if (!ticker) return;
+                if (!watchlist.includes(ticker)) setWatchlist([...watchlist, ticker]);
+                setResolvedSymbols(prev => ({
+                    ...prev,
+                    [ticker]: {
+                        name: node.name || ticker,
+                        exchange: node.exchange || 'US',
+                        currency: node.currency || 'USD'
+                    }
+                }));
+                setActiveStock(ticker);
                 setSearchQuery('');
                 setSuggestions([]);
             };
 
-            const activeCompanyMeta = TICKER_DICTIONARY.find(i => i.ticker === activeStock) || { name: `${activeStock} Co.`, exchange: 'NAS', cap: 'N/A', pe: 'N/A' };
+            const activeCompanyMeta = resolvedSymbols[activeStock] ||
+                TICKER_DICTIONARY.find(i => i.ticker === activeStock) ||
+                { name: activeStock + ' Co.', exchange: 'US', cap: 'N/A', pe: 'N/A' };
 
             const windowHigh = renderedChartData.length > 0 ? Math.max(...renderedChartData.map(d => d.high)) : 0;
             const windowLow = renderedChartData.length > 0 ? Math.min(...renderedChartData.map(d => d.low)) : 0;
@@ -1702,7 +1782,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                             <div>
                                                 <div class="flex items-center space-x-2 font-mono">
                                                     <span class={`text-sm font-bold ${isSelected ? 'text-[#00FF66]' : 'text-zinc-300'}`}>{ticker}</span>
-                                                    <span class={`text-[8px] px-1 border rounded-sm ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-600' : 'bg-zinc-100 border-zinc-300 text-zinc-500'}`}>{dictRef ? dictRef.exchange : 'NAS'}</span>
+                                                    <span class={`text-[8px] px-1 border rounded-sm ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-600' : 'bg-zinc-100 border-zinc-300 text-zinc-500'}`}>{resolvedSymbols[ticker]?.exchange || dictRef?.exchange || 'US'}</span>
                                                 </div>
                                                 <div class={`text-[10px] font-mono ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>V: {details.volume}</div>
                                             </div>
