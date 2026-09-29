@@ -122,6 +122,26 @@ Therefore:
 - after edits, inspect the browser console for Babel syntax errors
 - remember that one parse-time error can prevent the entire application from rendering
 
+## Data providers
+
+Supported live providers:
+- Twelve Data
+- Alpaca
+- Alpha Vantage
+
+Provider precedence in the current single-file UI is Alpaca when both Alpaca credentials are present, otherwise Alpha Vantage when its API key is present, otherwise Twelve Data when its key is present, otherwise DEMO/mock mode. Do not silently change this precedence without updating the connection UI text.
+
+### Alpha Vantage implementation rules
+
+- Use `TIME_SERIES_INTRADAY` with 5-minute, 15-minute and 30-minute intervals for the 1D, 1W and 1M views respectively.
+- Use `TIME_SERIES_DAILY` full history for 1Y.
+- Normalize `1. open`, `2. high`, `3. low`, `4. close`, `5. volume` to the common OHLCV model.
+- Preserve the provider's `YYYY-MM-DD` session date separately from the timestamp so 1D/1W filtering is not broken by the browser's local timezone.
+- Use `GLOBAL_QUOTE` for the lower-right quote panel when realtime entitlement is available.
+- Use `OVERVIEW`, `INCOME_STATEMENT`, and `EARNINGS` to populate live fundamentals/financial panels when responses contain usable data.
+- Keep technical-indicator calculations local and provider-independent; do not replace the existing indicator pipeline with provider-specific indicator endpoints unless explicitly requested.
+- Alpha Vantage intraday history is premium, so the free tier is not expected to reproduce the dashboard's current intraday views.
+
 ## Data model
 
 Use one internal normalized OHLC representation regardless of provider.
