@@ -1623,6 +1623,8 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             React.useEffect(() => {
                 const query = searchQuery.trim();
                 if (!query) { setSuggestions([]); return; }
+
+                let cancelled = false;
                 const localMatches = TICKER_DICTIONARY.filter(item =>
                     item.ticker.toLowerCase().includes(query.toLowerCase()) ||
                     item.name.toLowerCase().includes(query.toLowerCase())
@@ -1642,29 +1644,41 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                         });
                     }
                 }
-                if (activeProvider === 'ALPACA' && /^[A-Z0-9._-]{1,20}$/i.test(query)) {
-                    const asset = await resolveAlpacaAsset(query);
-                    if (asset) {
-                        setSuggestions(prev => [asset, ...prev.filter(item => item.ticker !== asset.ticker)].slice(0, 8));
+
+                setSuggestions(localMatches.slice(0, 8));
+
+                const timer = setTimeout(async () => {
+                    if (activeProvider === 'ALPACA' && /^[A-Z0-9._-]{1,20}$/i.test(query)) {
+                        const asset = await resolveAlpacaAsset(query);
+                        if (!cancelled && asset) {
+                            setSuggestions(prev => [
+                                asset,
+                                ...prev.filter(item => item.ticker !== asset.ticker)
+                            ].slice(0, 8));
+                        }
+                        return;
                     }
-                }
 
-                setSuggestions(localMatches.slice(0,8));
-                if (!hasLiveCredentials || query.length < 2) return;
+                    if (!hasLiveCredentials || query.length < 2) return;
 
-                const timer=setTimeout(async()=>{
-                    const liveMatches=await searchLiveSymbols(query);
-                    if(!liveMatches.length)return;
-                    setSuggestions(prev=>{
-                        const merged=[...prev];
-                        liveMatches.forEach(item=>{
-                            if(!merged.some(existing=>existing.ticker===item.ticker))merged.push(item);
+                    const liveMatches = await searchLiveSymbols(query);
+                    if (!cancelled && liveMatches.length) {
+                        setSuggestions(prev => {
+                            const merged = [...prev];
+                            liveMatches.forEach(item => {
+                                if (!merged.some(existing => existing.ticker === item.ticker)) merged.push(item);
+                            });
+                            return merged.slice(0, 8);
                         });
-                        return merged.slice(0,8);
-                    });
-                },300);
-                return()=>clearTimeout(timer);
+                    }
+                }, 300);
+
+                return () => {
+                    cancelled = true;
+                    clearTimeout(timer);
+                };
             }, [searchQuery, hasLiveCredentials, activeProvider, apiKey, alpacaKeyId, alpacaSecretKey, resolveAlpacaAsset]);
+
 
             const selectEngineNode = (node) => {
                 addSearchSymbol(node);
