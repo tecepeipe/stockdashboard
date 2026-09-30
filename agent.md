@@ -6,7 +6,7 @@ Maintain `tecepeipe/stockdashboard` as a reliable, understandable static stock-m
 
 The project is intentionally a **single-file HTML application**. Prioritise correctness, resilience, maintainability and preservation of the existing UX over architectural complexity.
 
-**Current version: 1.9.2**
+**Current version: 1.10.0**
 
 ## Repository
 
@@ -91,7 +91,7 @@ Inside `index.html`, preserve separation between:
 - constants/config
 - mock data
 - storage
-- provider adapters
+- provider adapters (module scope)
 - validation/normalization
 - timeframe/cache
 - symbol metadata
@@ -102,10 +102,12 @@ Inside `index.html`, preserve separation between:
 - chart model/rendering
 - range selection
 - formatting
-- translations
+- translations (React `LanguageContext` + `t()`)
 - alerts/watchlist
-- Dashboard state
-- regression checks
+- `useMarketDataPipeline` hook
+- section components (HeaderBar, StatusBar, ApiKeyPanel, WatchlistSidebar, ChartSection, RightRail)
+- Dashboard assembly
+- regression/indicator/candle-pattern test suites (`window.__APP_DEBUG__`)
 
 ## Provider precedence
 
@@ -222,7 +224,7 @@ Cache:
 - must have expiry/freshness checks
 - force refresh must bypass relevant caches
 
-Important 1.9.2 behaviour:
+Important cached-symbol behaviour (since 1.9.2):
 - a cached historical dataset does not guarantee a current quote exists
 - when the active symbol has cached chart data but no quote snapshot, refresh the active quote
 - avoid reloading unrelated data solely because the user changed to a cached symbol
@@ -398,12 +400,14 @@ Supported:
 
 Central translation dictionary: `uiTranslations`.
 
+UI text is resolved through React's `LanguageContext` and the `useT()` hook (`t('key')`). There is no DOM TreeWalker/`translateStaticText` pass anymore.
+
 When adding UI text:
 - update all four languages
 - preserve translation keys
 - do not translate ticker/provider identifiers
 - test without reload
-- preserve `document.documentElement.lang`
+- preserve `document.documentElement.lang` and `document.title`
 - test dark/light themes
 - audit chart titles, S/R, range, alerts and Pattern Lab
 
@@ -458,7 +462,10 @@ After editing:
 
 ## Regression tests
 
-Current load-time checks cover core formatting and range helpers. Candlestick detector self-tests remain separate.
+Three load-time suites run on every page load and report through `window.__APP_DEBUG__`:
+- `[REGRESSION CHECKS]` — core formatting, range selection, session keys, quarter labels, timeframe bars, cache keys.
+- `[INDICATOR CHECKS]` — indicator math including null warm-up behaviour.
+- `[CANDLE PATTERN TESTS]` — candlestick detector fixtures.
 
 When changing a pure helper, add a focused regression check.
 
@@ -549,27 +556,30 @@ For every modification:
 11. Prefer small, reversible commits.
 12. Re-fetch after a GitHub update before any subsequent SHA-dependent update.
 
-## Completed refactors through 1.9.2
+## Completed refactors through 1.10.0
 
 The single-file architecture now includes logical separation for:
 1. centralized browser storage
 2. normalized market data
-3. provider loading
+3. provider loading (module scope)
 4. Alpha Vantage adapter
 5. Twelve Data adapter
 6. defensive chart-data sanitization
 7. duplicate chart removal
-8. technical-analysis engine
+8. technical-analysis engine (null warm-ups, Wilder ATR)
 9. candlestick detector and Pattern Lab
 10. formatting/calculation helpers
 11. chart model
 12. range selection
-13. translations
-14. persistent Dashboard state
-15. regression checks
+13. translations (React context + `t()`)
+14. `useMarketDataPipeline` hook
+15. test suites: core/indicator/candle-pattern via `window.__APP_DEBUG__`
 16. duplicate trailing-document cleanup
 17. Alpaca active-symbol metadata resolution
 18. active quote refresh for cached symbol switching
+19. section components (HeaderBar, StatusBar, ApiKeyPanel, WatchlistSidebar, ChartSection, RightRail)
+20. SRI-pinned CDN scripts
+21. memoized CandlestickChart
 
 ## Next priorities
 
@@ -581,4 +591,3 @@ Priority order:
 3. define quote versus last-OHLC semantics consistently
 4. centralize cache/request policy
 5. add provider fixtures and regression coverage
-6. further logically separate UI sections while keeping one HTML file

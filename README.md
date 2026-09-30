@@ -2,9 +2,23 @@
 
 An interactive, single-file stock market dashboard for exploring price action, technical indicators, candlestick reversal patterns, historical pattern behaviour, support/resistance, market data, watchlists and browser-side price alerts.
 
-**Current application version: 1.9.2**
+**Current application version: 1.10.0**
 
 The application starts with **built-in mock market data**, allowing visitors to explore the dashboard without API credentials. When live credentials are supplied, the dashboard can retrieve market data from Twelve Data, Alpaca or Alpha Vantage.
+
+## What's new in v1.10.0
+
+- Indicator warm-up correctness: EMA/RSI/SMA/Bollinger Bands use null warm-up windows, MACD trend is null-safe, and ATR uses Wilder smoothing.
+- Demo (FAKE) mode now computes real indicators after normalization, not hardcoded values.
+- Intraday sessions bucketed in Eastern time (US market sessions) and fiscal quarter labels fixed.
+- Rate-limit detection with exponential backoff, missing-only per-ticker refetch and per-ticker failure isolation; quote freshness tracked separately from timeframe cache.
+- Alpaca bars fetched newest-first with `page_token` pagination.
+- CDN scripts (Tailwind, React, ReactDOM, Babel) pinned with Subresource Integrity hashes; referrer policy set to `no-referrer`.
+- `CandlestickChart` memoized with rAF-coalesced hover; telemetry and ticker lookups deduplicated.
+- React-level i18n: `LanguageContext` + `t()` replaces the DOM TreeWalker translator; `document.title` follows language.
+- Structural extraction: module-scope provider loaders, `useMarketDataPipeline` hook, and section components (`HeaderBar`, `StatusBar`, `ApiKeyPanel`, `WatchlistSidebar`, `ChartSection`, `RightRail`) while keeping the single-file architecture.
+- Pattern Lab labelled with a DEMO MODE banner in demo data; price-alert notifications guarded when permission is unavailable; pipeline rejections handled explicitly.
+- Three in-page test suites: `[REGRESSION CHECKS]`, `[INDICATOR CHECKS]` and `[CANDLE PATTERN TESTS]` exposed through `window.__APP_DEBUG__`.
 
 ## Features
 
@@ -26,7 +40,7 @@ The dashboard calculates indicators locally so the analysis logic remains consis
 - SMA 20 and 50.
 - MACD 12/26/9 and signal line.
 - RSI 14.
-- ATR.
+- ATR (Wilder smoothing).
 - Bollinger Bands.
 - Volume moving average / volume ratio.
 - Trend/context information used by pattern analysis.
@@ -225,15 +239,16 @@ Mock / Twelve Data / Alpaca / Alpha Vantage
 Recent refactoring has separated:
 - Browser storage access.
 - Market-data normalization.
-- Provider loading.
+- Provider loading (module scope).
 - Alpha Vantage, Twelve Data and Alpaca adapters.
 - Technical-analysis calculations.
 - Candlestick detection and Pattern Lab analysis.
 - Formatting/calculation helpers.
 - Chart geometry/model construction.
 - Range-selection calculations.
-- Translation data and static translation logic.
-- Persistent Dashboard state handling.
+- Translation data and React-level i18n (`LanguageContext` + `t()`).
+- The data pipeline in the `useMarketDataPipeline` hook.
+- Dashboard state handling and section components (`HeaderBar`, `StatusBar`, `ApiKeyPanel`, `WatchlistSidebar`, `ChartSection`, `RightRail`).
 
 The goal is logical modularity while preserving the simple static deployment model.
 
@@ -266,7 +281,11 @@ Raw provider field names should not leak into chart or analysis code.
 
 ## Testing and resilience
 
-The application includes lightweight load-time regression checks for core pure helpers, in addition to candlestick detector self-tests.
+The application includes lightweight load-time test suites, exposed through the `window.__APP_DEBUG__` test hook:
+
+- `[REGRESSION CHECKS]` — core pure helpers (price/percent/ratio formatting, range selection, session keys, quarter labels, timeframe bars, cache keys).
+- `[INDICATOR CHECKS]` — EMA/RSI/SMA/ATR/Bollinger/MACD/RSI-series behaviour including null warm-ups.
+- `[CANDLE PATTERN TESTS]` — candlestick detector fixtures (hammer, engulfing, stars, tweezers, soldiers/crows and more).
 
 Current regression coverage includes checks for:
 - Price formatting.
@@ -331,7 +350,6 @@ Likely future work includes:
 - Further caching/request-efficiency improvements.
 - Clearer quote versus last-OHLC-candle semantics.
 - Additional regression and provider-fixture tests.
-- Logical extraction of UI sections while retaining the single-file architecture.
 - Better live ticker discovery and metadata coverage.
 - More capable alerts and watchlists.
 - Configurable chart overlays.

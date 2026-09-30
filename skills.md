@@ -4,7 +4,7 @@
 
 - Repository: `tecepeipe/stockdashboard`
 - Primary application: `index.html`
-- Current application version: **1.9.2**
+- Current application version: **1.10.0**
 - Deployment: static GitHub Pages
 - Live site: `https://tecepeipe.github.io/stockdashboard/`
 - Language: HTML/CSS/JavaScript
@@ -47,7 +47,7 @@ Logical modularity inside `index.html` is encouraged. Keep these concerns visibl
 - constants/configuration
 - mock data
 - storage
-- provider adapters
+- provider adapters (module scope)
 - response validation/normalization
 - timeframe/caching
 - indicators
@@ -56,10 +56,12 @@ Logical modularity inside `index.html` is encouraged. Keep these concerns visibl
 - support/resistance
 - chart model/rendering
 - range selection
-- translations
+- translations (React `LanguageContext` + `t()`)
 - alerts/watchlist
-- Dashboard/UI state
-- regression checks
+- `useMarketDataPipeline` hook
+- section components (HeaderBar, StatusBar, ApiKeyPanel, WatchlistSidebar, ChartSection, RightRail)
+- Dashboard assembly
+- regression/indicator/candle-pattern test suites (`window.__APP_DEBUG__`)
 
 ## Current provider architecture
 
@@ -340,9 +342,9 @@ Supported languages:
 - ES
 - FR
 
-Translation data is centralized in `uiTranslations`.
+Translation data is centralized in `uiTranslations` and applied through React's `LanguageContext` with the `useT()` hook (`t('key')`). There is no DOM TreeWalker/`translateStaticText` pass.
 
-Language state is persisted through browser storage and applied without reload. `document.documentElement.lang` must remain synchronized.
+Language state is persisted through browser storage and applied without reload. `document.documentElement.lang` and `document.title` must remain synchronized.
 
 When adding UI text:
 - update all four languages
@@ -382,14 +384,11 @@ They are not server-side alerts or order execution.
 
 ## Regression checks
 
-The application contains lightweight load-time regression checks for pure helpers, including:
-- price formatting
-- signed percent formatting
-- ratio formatting
-- normal/reversed range selection
-- invalid range input
+The application runs three load-time suites, reported through the `window.__APP_DEBUG__` test hook:
 
-Candlestick detector self-tests remain separate.
+- `[REGRESSION CHECKS]` — price formatting, signed percent formatting, ratio formatting, normal/reversed/invalid range selection, session keys, quarter labels, timeframe bars, cache keys.
+- `[INDICATOR CHECKS]` — EMA/RSI/SMA/ATR/Bollinger/MACD behaviour including null warm-ups.
+- `[CANDLE PATTERN TESTS]` — candlestick detector fixtures.
 
 When changing a pure helper, add or update a focused regression check.
 
@@ -519,24 +518,27 @@ For every change:
 The project has completed the following logical refactors while remaining single-file:
 1. Central browser storage helper.
 2. Canonical market-data normalization.
-3. Provider-loading isolation.
+3. Provider-loading isolation (module scope).
 4. Alpha Vantage adapter.
 5. Twelve Data adapter.
 6. Defensive chart-data sanitization.
 7. Duplicate chart-component removal.
-8. Technical-analysis engine separation.
+8. Technical-analysis engine separation (null warm-ups, Wilder ATR).
 9. Candlestick detector / Pattern Lab separation.
 10. Central formatting/calculation helpers.
 11. Central chart model.
 12. Central range-selection calculation.
-13. Central translation system.
-14. Persistent Dashboard state helper.
-15. Lightweight regression checks.
+13. React-level translation system (`LanguageContext` + `t()`).
+14. `useMarketDataPipeline` hook.
+15. Load-time test suites: core/indicator/candle-pattern via `window.__APP_DEBUG__`.
 16. Removal of duplicated trailing document content.
 17. Alpaca company metadata resolution for active tickers.
 18. Active quote refresh when switching to a cached symbol.
+19. Section components (HeaderBar, StatusBar, ApiKeyPanel, WatchlistSidebar, ChartSection, RightRail).
+20. SRI-pinned CDN scripts and no-referrer policy.
+21. Memoized CandlestickChart with rAF-coalesced hover.
 
-The current version is **1.9.2**.
+The current version is **1.10.0**.
 
 ## Next engineering priorities
 
@@ -546,5 +548,4 @@ Planned work should focus on:
 3. Clear quote versus last-OHLC semantics.
 4. Centralized caching/request policy.
 5. More provider fixture/regression tests.
-6. Further Dashboard/UI logical separation without leaving the single-file architecture.
 
