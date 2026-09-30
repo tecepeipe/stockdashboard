@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="1.5.0">
+    <meta name="version" content="1.6.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -85,6 +85,28 @@
             return Number.isFinite(lower) && Number.isFinite(upper) && lower !== 0
                 ? ((upper - lower) / lower) * 100
                 : NaN;
+        };
+
+        const calculateRangeSelection = (data, selection) => {
+            if (!Array.isArray(data) || data.length === 0 || !selection) return null;
+
+            const rawStart = Number(selection.start);
+            const rawEnd = Number(selection.end);
+            if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd)) return null;
+
+            const startIndex = Math.max(0, Math.min(Math.trunc(rawStart), Math.trunc(rawEnd)));
+            const endIndex = Math.min(data.length - 1, Math.max(Math.trunc(rawStart), Math.trunc(rawEnd)));
+            const startCandle = data[startIndex];
+            const endCandle = data[endIndex];
+
+            if (!startCandle || !endCandle) return null;
+
+            const priceChange = endCandle.close - startCandle.close;
+            const percentChange = startCandle.close !== 0
+                ? (priceChange / startCandle.close) * 100
+                : 0;
+
+            return { startIndex, endIndex, startCandle, endCandle, priceChange, percentChange };
         };
 
         const Icons = {
@@ -2488,17 +2510,7 @@ const analyzePatternLab = data => {
             const chartLabelBg = theme === 'dark' ? '#09090b' : '#ffffff';
             const chartLabelText = theme === 'dark' ? '#a1a1aa' : '#52525b';
 
-            const selectedRange = rangeSelection && chartData.length > 0
-                ? (() => {
-                    const startIndex = Math.max(0, Math.min(rangeSelection.start, rangeSelection.end));
-                    const endIndex = Math.min(chartData.length - 1, Math.max(rangeSelection.start, rangeSelection.end));
-                    const startCandle = chartData[startIndex];
-                    const endCandle = chartData[endIndex];
-                    const priceChange = endCandle.close - startCandle.close;
-                    const percentChange = startCandle.close !== 0 ? (priceChange / startCandle.close) * 100 : 0;
-                    return { startIndex, endIndex, startCandle, endCandle, priceChange, percentChange };
-                })()
-                : null;
+            const selectedRange = calculateRangeSelection(chartData, rangeSelection);
 
             return (
                 <div class="w-full h-full flex flex-col justify-between">
