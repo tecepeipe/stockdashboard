@@ -80,6 +80,20 @@ The chart and analysis layers should not need to know whether data came from Twe
 
 ### Alpaca lessons learned
 
+### Alpaca symbol discovery and metadata
+
+For Alpaca, symbol discovery and market-data availability are separate concerns.
+
+- The browser may accept a syntactically valid US-equity ticker even when it is not present in the built-in `TICKER_DICTIONARY`.
+- Do not use the presence of historical bars as the sole test of whether an Alpaca symbol is valid. A response such as `{"bars":null,...}` can mean there is no usable data for the requested feed/timeframe rather than that the ticker is invalid.
+- Use Alpaca's authenticated asset metadata endpoint, `/v2/assets/{symbol}`, when available to resolve the instrument's company name and metadata.
+- Cache successful asset metadata lookups during the session to avoid unnecessary repeated requests.
+- If asset metadata cannot be retrieved, the ticker must still remain selectable and usable; fall back to the ticker as its display name.
+- When metadata is resolved after a search suggestion is initially displayed, update the suggestion and resolved symbol metadata so the company name is shown consistently in the dropdown, watchlist and active chart title.
+- Keep Alpaca metadata lookup separate from the normalized OHLCV market-data pipeline.
+
+
+
 During debugging, the browser showed successful requests to `data.alpaca.markets` with HTTP 200, but the OHLC graph did not update.
 
 Observed response examples included:
