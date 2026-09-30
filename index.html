@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="1.1.7">
+    <meta name="version" content="1.1.8">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -2222,12 +2222,29 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 return <div class="h-full flex items-center justify-center font-mono text-xs text-zinc-700 animate-pulse">CONNECTING INTERFACE PIPELINES...</div>;
             }
 
-            const highLowPrices = vectorData.map(d => [d.high, d.low]).flat();
+            // Cached/provider data can occasionally contain incomplete indicator values.
+            // Keep the chart SVG strictly finite so one malformed value cannot produce
+            // NaN coordinates and flood the browser console with SVG attribute errors.
+            const chartData = vectorData
+                .filter(d => [d.open, d.high, d.low, d.close].every(Number.isFinite))
+                .map(d => ({
+                    ...d,
+                    rsi: Number.isFinite(d.rsi) ? d.rsi : 50,
+                    macd: Number.isFinite(d.macd) ? d.macd : 0,
+                    signal: Number.isFinite(d.signal) ? d.signal : 0,
+                    hist: Number.isFinite(d.hist) ? d.hist : 0
+                }));
+
+            if (chartData.length === 0) {
+                return <div class="h-full flex items-center justify-center font-mono text-xs text-zinc-700 animate-pulse">NO VALID MARKET DATA TO RENDER...</div>;
+            }
+
+            const highLowPrices = chartData.map(d => [d.high, d.low]).flat();
             const maxPrice = Math.max(...highLowPrices) * 1.01;
             const minPrice = Math.min(...highLowPrices) * 0.99;
             const priceDelta = maxPrice - minPrice || 1;
 
-            const macdIndicators = vectorData.map(d => [d.macd, d.signal, d.hist]).flat();
+            const macdIndicators = chartData.map(d => [d.macd, d.signal, d.hist]).flat();
             const maxMacd = Math.max(...macdIndicators, 0.02);
             const minMacd = Math.min(...macdIndicators, -0.02);
             const macdDelta = maxMacd - minMacd || 1;
@@ -2244,9 +2261,9 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
             const rsiTop = candleAreaHeight + panelGap;
             const macdTop = rsiTop + rsiAreaHeight + panelGap;
-            const horizontalStep = widthDimension / vectorData.length;
+            const horizontalStep = widthDimension / chartData.length;
 
-            const identifiedPatterns = showPatterns ? scanCandlestickPatterns(vectorData) : [];
+            const identifiedPatterns = showPatterns ? scanCandlestickPatterns(chartData) : [];
 
             // Derive simple horizontal support/resistance levels from repeated swing points.
             // Levels are calculated from the same visible candles rendered by this chart.
@@ -2293,12 +2310,12 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             const chartLabelBg = theme === 'dark' ? '#09090b' : '#ffffff';
             const chartLabelText = theme === 'dark' ? '#a1a1aa' : '#52525b';
 
-            const selectedRange = rangeSelection && vectorData.length > 0
+            const selectedRange = rangeSelection && chartData.length > 0
                 ? (() => {
                     const startIndex = Math.max(0, Math.min(rangeSelection.start, rangeSelection.end));
-                    const endIndex = Math.min(vectorData.length - 1, Math.max(rangeSelection.start, rangeSelection.end));
-                    const startCandle = vectorData[startIndex];
-                    const endCandle = vectorData[endIndex];
+                    const endIndex = Math.min(chartData.length - 1, Math.max(rangeSelection.start, rangeSelection.end));
+                    const startCandle = chartData[startIndex];
+                    const endCandle = chartData[endIndex];
                     const priceChange = endCandle.close - startCandle.close;
                     const percentChange = startCandle.close !== 0 ? (priceChange / startCandle.close) * 100 : 0;
                     return { startIndex, endIndex, startCandle, endCandle, priceChange, percentChange };
@@ -2428,7 +2445,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                             })()}
 
                             {hoverNode && !isSelectingRange && (() => {
-                                const targetIdx = vectorData.indexOf(hoverNode);
+                                const targetIdx = chartData.indexOf(hoverNode);
                                 if (targetIdx !== -1) {
                                     const centerX = targetIdx * horizontalStep + (horizontalStep / 2);
                                     return <line x1={centerX} y1={0} x2={centerX} y2={heightDimension} stroke="rgba(0,255,102,0.15)" strokeWidth="1" strokeDasharray="2,2" />;
@@ -2441,7 +2458,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                 const rightX = (pat.endIndex + 1) * horizontalStep - pad;
                                 const width = rightX - leftX;
                                 
-                                const segmentData = vectorData.slice(pat.startIndex, pat.endIndex + 1);
+                                const segmentData = chartData.slice(pat.startIndex, pat.endIndex + 1);
                                 const segHighs = segmentData.map(d => d.high);
                                 const segLows = segmentData.map(d => d.low);
                                 
@@ -2472,7 +2489,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                 </g>
                             )}
 
-                            {vectorData.map((d, i) => {
+                            {chartData.map((d, i) => {
                                 const x = i * horizontalStep + (horizontalStep / 2);
                                 const yOpen = candleAreaHeight * (1 - (d.open - minPrice) / priceDelta);
                                 const yClose = candleAreaHeight * (1 - (d.close - minPrice) / priceDelta);
@@ -2498,9 +2515,9 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
                                         {i > 0 && (() => {
                                             const prevX = (i - 1) * horizontalStep + (horizontalStep / 2);
-                                            const prevRsi = rsiTop + (rsiAreaHeight * (1 - vectorData[i-1].rsi / 100));
-                                            const prevMacd = macdTop + (macdAreaHeight * (1 - (vectorData[i-1].macd - minMacd) / macdDelta));
-                                            const prevSignal = macdTop + (macdAreaHeight * (1 - (vectorData[i-1].signal - minMacd) / macdDelta));
+                                            const prevRsi = rsiTop + (rsiAreaHeight * (1 - chartData[i-1].rsi / 100));
+                                            const prevMacd = macdTop + (macdAreaHeight * (1 - (chartData[i-1].macd - minMacd) / macdDelta));
+                                            const prevSignal = macdTop + (macdAreaHeight * (1 - (chartData[i-1].signal - minMacd) / macdDelta));
                                             return (
                                                 <g>
                                                     <line x1={prevX} y1={prevRsi} x2={x} y2={yRsi} stroke="#a855f7" strokeWidth="1" opacity="0.8" />
