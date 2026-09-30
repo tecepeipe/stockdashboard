@@ -4,7 +4,6 @@
 
 - Repository: `tecepeipe/stockdashboard`
 - Primary application: `index.html`
-- Current application version: **1.10.0**
 - Deployment: static GitHub Pages
 - Live site: `https://tecepeipe.github.io/stockdashboard/`
 - Language: HTML/CSS/JavaScript
