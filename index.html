@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="1.3.0">
+    <meta name="version" content="1.4.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -53,6 +53,48 @@
     <div id="root"></div>
 
     <script type="text/babel">
+
+        // Shared numeric/formatting helpers keep display rules and calculations consistent.
+        const formatFixed = (value, decimals = 2, fallback = '—') => {
+            const number = Number(value);
+            return Number.isFinite(number) ? number.toFixed(decimals) : fallback;
+        };
+
+        const formatPrice = (value, fallback = '0.00') => formatFixed(value, 2, fallback);
+
+        const formatPercent = (value, signed = false, fallback = '—') => {
+            const number = Number(value);
+            if (!Number.isFinite(number)) return fallback;
+            return `${signed && number >= 0 ? '+' : ''}${number.toFixed(2)}%`;
+        };
+
+        const formatRatio = (value, fallback = '—') => {
+            const number = Number(value);
+            return Number.isFinite(number) && number > 0 ? `${number.toFixed(2)}x` : fallback;
+        };
+
+        const formatVolume = (value) => {
+            const number = Number(value);
+            if (!Number.isFinite(number)) return '0';
+            return number > 1e6 ? `${(number / 1e6).toFixed(1)}M` : number.toLocaleString();
+        };
+
+        const calculatePercentChange = (start, end) => {
+            const from = Number(start);
+            const to = Number(end);
+            return Number.isFinite(from) && Number.isFinite(to) && from !== 0
+                ? ((to - from) / from) * 100
+                : NaN;
+        };
+
+        const calculateRangePercent = (low, high) => {
+            const lower = Number(low);
+            const upper = Number(high);
+            return Number.isFinite(lower) && Number.isFinite(upper) && lower !== 0
+                ? ((upper - lower) / lower) * 100
+                : NaN;
+        };
+
         const Icons = {
             TrendingUp: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>,
             TrendingDown: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline><polyline points="16 17 22 17 22 11"></polyline></svg>,
@@ -497,8 +539,7 @@
                 put(index - 2, 15.02, 15.38, 14.94, 15.28, 275000);
                 put(index - 1, 15.28, 15.72, 15.18, 15.62, 290000);
                 put(index,     15.56, 17.72, 15.58, 15.66, 900000); // SHOOTING STAR
-                put(index + 1, 15.68, 15.82, 15.12, 15.62, 420000);
-                put(index + 2, 15.20, 15.34, 14.78, 14.92, 400000);
+                put(index + 1, 15.68, 15.82, 15.12, 15.62, 420000);                put(index + 2, 15.20, 15.34, 14.78, 14.92, 400000);
                 put(index + 3, 14.92, 15.06, 14.50, 14.64, 390000);
                 put(index + 4, 14.64, 14.78, 14.22, 14.38, 380000);
                 put(index + 5, 14.38, 14.58, 14.04, 14.22, 370000);
@@ -997,8 +1038,7 @@ const analyzePatternLab = data => {
                 'FINANCIAL STATEMENTS': { pt: 'DEMONSTRAÇÕES FINANCEIRAS', en: 'FINANCIAL STATEMENTS', es: 'ESTADOS FINANCIEROS', fr: 'ÉTATS FINANCIERS' },
                 'PRICE ALERTS': { pt: 'ALERTAS DE PREÇO', en: 'PRICE ALERTS', es: 'ALERTAS DE PRECIO', fr: 'ALERTES DE PRIX' },
                 'PATTERN LAB': { pt: 'LABORATÓRIO DE PADRÕES', en: 'PATTERN LAB', es: 'LABORATORIO DE PATRONES', fr: 'LABORATOIRE DE CONFIGURATIONS' },
-                'PATTERN LAB // HISTORICAL EVENT STUDY': { pt: 'LABORATÓRIO DE PADRÕES // ESTUDO HISTÓRICO', en: 'PATTERN LAB // HISTORICAL EVENT STUDY', es: 'LABORATORIO DE PATRONES // ESTUDIO HISTÓRICO', fr: 'LABORATOIRE DE CONFIGURATIONS // ÉTUDE HISTORIQUE' },
-                'PRICE ACTION // OHLC': { pt: 'PREÇO DA AÇÃO // OHLC', en: 'PRICE ACTION // OHLC', es: 'ACCIÓN DEL PRECIO // OHLC', fr: 'ACTION DES PRIX // OHLC' },
+                'PATTERN LAB // HISTORICAL EVENT STUDY': { pt: 'LABORATÓRIO DE PADRÕES // ESTUDO HISTÓRICO', en: 'PATTERN LAB // HISTORICAL EVENT STUDY', es: 'LABORATORIO DE PATRONES // ESTUDIO HISTÓRICO', fr: 'LABORATOIRE DE CONFIGURATIONS // ÉTUDE HISTORIQUE' },                'PRICE ACTION // OHLC': { pt: 'PREÇO DA AÇÃO // OHLC', en: 'PRICE ACTION // OHLC', es: 'ACCIÓN DEL PRECIO // OHLC', fr: 'ACTION DES PRIX // OHLC' },
                 'RSI (14) // 30 / 70': { pt: 'RSI (14) // 30 / 70', en: 'RSI (14) // 30 / 70', es: 'RSI (14) // 30 / 70', fr: 'RSI (14) // 30 / 70' },
                 'MACD (12,26,9)': { pt: 'MACD (12,26,9)', en: 'MACD (12,26,9)', es: 'MACD (12,26,9)', fr: 'MACD (12,26,9)' },
                 'QUANTITATIVE DATA MATRIX': { pt: 'MATRIZ DE DADOS QUANTITATIVOS', en: 'QUANTITATIVE DATA MATRIX', es: 'MATRIZ DE DATOS CUANTITATIVOS', fr: 'MATRICE DE DONNÉES QUANTITATIVES' },
@@ -1497,8 +1537,7 @@ const analyzePatternLab = data => {
                             price: currentCandle.close,
                             change: ((currentCandle.close - processedData[0].close) / processedData[0].close) * 100,
                             volume: '1.2M',
-                            cap: staticMeta.cap,
-                            pe: staticMeta.pe
+                            cap: staticMeta.cap,                            pe: staticMeta.pe
                         };
                         if (ticker === activeStock) setRenderedChartData(processedData);
                     }
@@ -1783,7 +1822,7 @@ const analyzePatternLab = data => {
                             localPrices[ticker] = {
                                 price: currentCandle.close,
                                 change: deltaPercentage,
-                                volume: currentCandle.volume > 1e6 ? (currentCandle.volume/1e6).toFixed(1) + 'M' : currentCandle.volume.toLocaleString(),
+                                volume: formatVolume(currentCandle.volume),
                                 cap: liveFundamentals ? liveFundamentals.market_cap : staticMeta.cap,
                                 pe: liveFundamentals ? liveFundamentals.pe_ratio : staticMeta.pe
                             };
@@ -1997,8 +2036,7 @@ const analyzePatternLab = data => {
                 const exactLocal = TICKER_DICTIONARY.find(s => s.ticker.toUpperCase() === upper);
                 const exactSuggestion = suggestions.find(s => s.ticker?.toUpperCase() === upper);
 
-                if (exactSuggestion) {
-                    addSearchSymbol(exactSuggestion);
+                if (exactSuggestion) {                    addSearchSymbol(exactSuggestion);
                     return;
                 }
 
@@ -2177,9 +2215,9 @@ const analyzePatternLab = data => {
                                             </div>
                                             <div class="flex items-center space-x-3 font-mono text-right">
                                                 <div>
-                                                    <div class={`text-xs font-bold ${theme === 'dark' ? 'text-zinc-200' : 'text-zinc-800'}`}>${details.price.toFixed(2)}</div>
+                                                    <div class={`text-xs font-bold ${theme === 'dark' ? 'text-zinc-200' : 'text-zinc-800'}`}>${formatPrice(details.price)}</div>
                                                     <div class={`text-[9px] font-bold flex items-center justify-end ${isUp ? 'text-[#00FF66]' : 'text-red-500'}`}>
-                                                        {isUp ? '+' : ''}{details.change.toFixed(2)}%
+                                                        {isUp ? '+' : ''}{formatFixed(details.change, 2)}%
                                                     </div>
                                                 </div>
                                                 <button onClick={(e) => { e.stopPropagation(); setWatchlist(watchlist.filter(w => w !== ticker)); }} class={`${theme === 'dark' ? 'text-zinc-700' : 'text-zinc-400'} hover:text-red-500`}><Icons.Trash /></button>
@@ -2225,7 +2263,7 @@ const analyzePatternLab = data => {
                                         <span class={`text-xs font-normal ml-2 ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>// {activeCompanyMeta.name}</span>
                                     </h2>
                                     <div class="text-xl font-bold font-mono text-[#00FF66] bg-[#00FF66]/5 border border-[#00FF66]/20 px-3 py-1 rounded-sm">
-                                        ${stockPrices[activeStock] ? stockPrices[activeStock].price.toFixed(2) : '0.00'}
+                                        ${stockPrices[activeStock] ? formatPrice(stockPrices[activeStock].price) : '0.00'}
                                     </div>
                                 </div>
 
@@ -2243,10 +2281,10 @@ const analyzePatternLab = data => {
                                     {[
                                         { label: 'MARKET CAP', value: stockPrices[activeStock] ? stockPrices[activeStock].cap : activeCompanyMeta.cap },
                                          { label: 'P/E RATIO', value: stockPrices[activeStock] ? stockPrices[activeStock].pe : activeCompanyMeta.pe },
-                                        { label: 'DAY CHANGE', value: quoteInfo[activeStock]?.percent_change != null ? `${Number(quoteInfo[activeStock].percent_change).toFixed(2)}%` : 'N/A'},
-                                        { label: 'DAY RANGE',  value: quoteInfo[activeStock]?.low != null && quoteInfo[activeStock]?.high != null ? `$${Number(quoteInfo[activeStock].low).toFixed(2)} – $${Number(quoteInfo[activeStock].high).toFixed(2)}` : 'N/A' },
-                                        { label: `WINDOW LOW (${timeframe})`, value: windowLow ? `$${windowLow.toFixed(2)}` : 'N/A' },
-                                        { label: `WINDOW HIGH (${timeframe})`, value: windowHigh ? `$${windowHigh.toFixed(2)}` : 'N/A' }
+                                        { label: 'DAY CHANGE', value: quoteInfo[activeStock]?.percent_change != null ? `${formatFixed(quoteInfo[activeStock].percent_change, 2)}%` : 'N/A'},
+                                        { label: 'DAY RANGE',  value: quoteInfo[activeStock]?.low != null && quoteInfo[activeStock]?.high != null ? `$${formatFixed(quoteInfo[activeStock].low, 2)} – $${formatFixed(quoteInfo[activeStock].high, 2)}` : 'N/A' },
+                                        { label: `WINDOW LOW (${timeframe})`, value: windowLow ? `$${formatFixed(windowLow, 2)}` : 'N/A' },
+                                        { label: `WINDOW HIGH (${timeframe})`, value: windowHigh ? `$${formatFixed(windowHigh, 2)}` : 'N/A' }
                                     ].map((m, idx) => (
                                         <div key={idx} class={`border rounded-sm p-3 font-mono ${theme === 'dark' ? 'bg-[#0b0b0c] border-zinc-900' : 'bg-white border-zinc-200'}`}>
                                             <div class={`text-[8px] tracking-widest uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>{m.label}</div>
@@ -2261,7 +2299,7 @@ const analyzePatternLab = data => {
                                     <h3 class={`text-[10px] font-mono font-bold tracking-widest ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>PRICE ALERTS</h3>
                                     <div class="flex gap-2">
                                         <button onClick={requestNotificationPermission} class="text-[9px] font-mono text-[#00FF66]">NOTIFY</button>
-                                        <button onClick={() => setPriceAlerts([...priceAlerts,{id:Date.now(),ticker:activeStock,target:Number((stockPrices[activeStock]?.price||0).toFixed(2)),direction:'ABOVE',enabled:true,isDefault:false}])} class="text-[9px] font-mono text-[#00FF66]">+ ADD</button>
+                                        <button onClick={() => setPriceAlerts([...priceAlerts,{id:Date.now(),ticker:activeStock,target:Number(formatPrice(stockPrices[activeStock]?.price || 0)),direction:'ABOVE',enabled:true,isDefault:false}])} class="text-[9px] font-mono text-[#00FF66]">+ ADD</button>
                                     </div>
                                 </div>
                                 {priceAlerts.filter(a=>a.ticker===activeStock).map(a=>(
@@ -2453,19 +2491,19 @@ const analyzePatternLab = data => {
                         {hoverNode ? (
                             <>
                                 <span>T: <strong class="text-white">{hoverNode.time}</strong></span>
-                                <span>O: <strong class="text-zinc-400">${hoverNode.open.toFixed(2)}</strong></span>
-                                <span>H: <strong class="text-[#00FF66]">${hoverNode.high.toFixed(2)}</strong></span>
-                                <span>L: <strong class="text-red-500">${hoverNode.low.toFixed(2)}</strong></span>
-                                <span>C: <strong class="text-blue-400">${hoverNode.close.toFixed(2)}</strong></span>
+                                <span>O: <strong class="text-zinc-400">${formatPrice(hoverNode.open)}</strong></span>
+                                <span>H: <strong class="text-[#00FF66]">${formatPrice(hoverNode.high)}</strong></span>
+                                <span>L: <strong class="text-red-500">${formatPrice(hoverNode.low)}</strong></span>
+                                <span>C: <strong class="text-blue-400">${formatPrice(hoverNode.close)}</strong></span>
                                 <span>RSI: <strong class="text-purple-400">{hoverNode.rsi}</strong></span>
                                 <span>MACD: <strong class="text-blue-500">{hoverNode.macd}</strong></span>
                                 {selectedRange ? (
                                     <span>RANGE: <strong class={selectedRange.percentChange >= 0 ? 'text-[#00FF66]' : 'text-red-500'}>
-                                        {selectedRange.percentChange >= 0 ? '+' : ''}{selectedRange.percentChange.toFixed(2)}%
-                                    </strong> <span class="text-zinc-500">({selectedRange.priceChange >= 0 ? '+' : ''}${selectedRange.priceChange.toFixed(2)})</span></span>
+                                        {selectedRange.percentChange >= 0 ? '+' : ''}{formatFixed(selectedRange.percentChange, 2)}%
+                                    </strong> <span class="text-zinc-500">({selectedRange.priceChange >= 0 ? '+' : ''}${formatFixed(selectedRange.priceChange, 2)})</span></span>
                                 ) : (
                                     <span>RANGE: <strong class={hoverNode.close >= hoverNode.open ? 'text-[#00FF66]' : 'text-red-500'}>
-                                        {(((hoverNode.high - hoverNode.low) / hoverNode.low) * 100).toFixed(2)}%
+                                        {formatFixed(calculateRangePercent(hoverNode.low, hoverNode.high), 2)}%
                                     </strong></span>
                                 )}
                             </>
@@ -2497,8 +2535,7 @@ const analyzePatternLab = data => {
                             {(() => {
                                 const zeroY = macdTop + (macdAreaHeight * (1 - (0 - minMacd) / macdDelta));
                                 return (
-                                    <g>
-                                        <line x1={0} y1={zeroY} x2={widthDimension} y2={zeroY} stroke="rgba(161,161,170,0.32)" strokeWidth="1" strokeDasharray="4,3" />
+                                    <g>                                        <line x1={0} y1={zeroY} x2={widthDimension} y2={zeroY} stroke="rgba(161,161,170,0.32)" strokeWidth="1" strokeDasharray="4,3" />
                                         <text x={widthDimension - 5} y={zeroY - 3} textAnchor="end" fill="#6b7280" fontSize="7" fontFamily="monospace">0</text>
                                     </g>
                                 );
@@ -2538,7 +2575,7 @@ const analyzePatternLab = data => {
                                             fontFamily="monospace"
                                             fontWeight="bold"
                                         >
-                                            {isResistance ? 'R' : 'S'} ${level.price.toFixed(2)}
+                                            {isResistance ? 'R' : 'S'} ${formatPrice(level.price)}
                                         </text>
                                     </g>
                                 );
@@ -2692,8 +2729,8 @@ const analyzePatternLab = data => {
                 const m = Math.floor(values.length / 2);
                 return values.length % 2 ? values[m] : (values[m-1] + values[m]) / 2;
             };
-            const fmt = v => Number.isFinite(v) ? `${v >= 0 ? '+' : ''}${v.toFixed(2)}%` : '—';
-            const fmtRatio = v => Number.isFinite(v) && v > 0 ? `${v.toFixed(2)}x` : '—';
+            const fmt = v => formatPercent(v, true);
+            const fmtRatio = v => formatRatio(v);
             const fmtBody = v => Number.isFinite(v) ? `${(v * 100).toFixed(0)}%` : '—';
             const grouped = [...new Set(rows.map(r => r.label))].map(label => {
                 const items = completed.filter(r => r.label === label);
@@ -2777,7 +2814,7 @@ const analyzePatternLab = data => {
                                                     <span class={r.type === 'BULLISH' ? 'text-[#00FF66]' : 'text-red-500'}>{r.label}</span>
                                                 </td>
                                                 <td class="px-2">{r.time}</td>
-                                                <td class="text-right px-2">${Number(r.entry).toFixed(2)}</td>
+                                                <td class="text-right px-2">${formatPrice(r.entry)}</td>
                                                 <td class="text-right px-2">{context.priorTrend || '—'}</td>
                                                 <td class="text-right px-2">{fmtBody(context.bodyPct)}</td>
                                                 <td class="text-right px-2">{fmtRatio(r.volumeRatio)}</td>
@@ -2997,8 +3034,7 @@ const analyzePatternLab = data => {
                                         setApiKey(twelveVal);
                                         setAlphaVantageKey(alphaVal);
                                         setAlpacaKeyId(alpacaIdVal);
-                                        setAlpacaSecretKey(alpacaSecretVal);
-                                        Storage.set(STORAGE_KEYS.TWELVE_DATA_KEY, twelveVal);
+                                        setAlpacaSecretKey(alpacaSecretVal);                                        Storage.set(STORAGE_KEYS.TWELVE_DATA_KEY, twelveVal);
                                         Storage.set(STORAGE_KEYS.ALPHA_VANTAGE_KEY, alphaVal);
                                         Storage.set(STORAGE_KEYS.ALPACA_KEY_ID, alpacaIdVal);
                                         Storage.set(STORAGE_KEYS.ALPACA_SECRET_KEY, alpacaSecretVal);
@@ -3056,9 +3092,9 @@ const analyzePatternLab = data => {
                                             </div>
                                             <div class="flex items-center space-x-3 font-mono text-right">
                                                 <div>
-                                                    <div class={`text-xs font-bold ${theme === 'dark' ? 'text-zinc-200' : 'text-zinc-800'}`}>${details.price.toFixed(2)}</div>
+                                                    <div class={`text-xs font-bold ${theme === 'dark' ? 'text-zinc-200' : 'text-zinc-800'}`}>${formatPrice(details.price)}</div>
                                                     <div class={`text-[9px] font-bold flex items-center justify-end ${isUp ? 'text-[#00FF66]' : 'text-red-500'}`}>
-                                                        {isUp ? '+' : ''}{details.change.toFixed(2)}%
+                                                        {isUp ? '+' : ''}{formatFixed(details.change, 2)}%
                                                     </div>
                                                 </div>
                                                 <button onClick={(e) => { e.stopPropagation(); setWatchlist(watchlist.filter(w => w !== ticker)); }} class={`${theme === 'dark' ? 'text-zinc-700' : 'text-zinc-400'} hover:text-red-500`}><Icons.Trash /></button>
@@ -3104,7 +3140,7 @@ const analyzePatternLab = data => {
                                         <span class={`text-xs font-normal ml-2 ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>// {activeCompanyMeta.name}</span>
                                     </h2>
                                     <div class="text-xl font-bold font-mono text-[#00FF66] bg-[#00FF66]/5 border border-[#00FF66]/20 px-3 py-1 rounded-sm">
-                                        ${stockPrices[activeStock] ? stockPrices[activeStock].price.toFixed(2) : '0.00'}
+                                        ${stockPrices[activeStock] ? formatPrice(stockPrices[activeStock].price) : '0.00'}
                                     </div>
                                 </div>
 
@@ -3122,10 +3158,10 @@ const analyzePatternLab = data => {
                                     {[
                                         { label: 'MARKET CAP', value: stockPrices[activeStock] ? stockPrices[activeStock].cap : activeCompanyMeta.cap },
                                          { label: 'P/E RATIO', value: stockPrices[activeStock] ? stockPrices[activeStock].pe : activeCompanyMeta.pe },
-                                        { label: 'DAY CHANGE', value: quoteInfo[activeStock]?.percent_change != null ? `${Number(quoteInfo[activeStock].percent_change).toFixed(2)}%` : 'N/A'},
-                                        { label: 'DAY RANGE',  value: quoteInfo[activeStock]?.low != null && quoteInfo[activeStock]?.high != null ? `$${Number(quoteInfo[activeStock].low).toFixed(2)} – $${Number(quoteInfo[activeStock].high).toFixed(2)}` : 'N/A' },
-                                        { label: `WINDOW LOW (${timeframe})`, value: windowLow ? `$${windowLow.toFixed(2)}` : 'N/A' },
-                                        { label: `WINDOW HIGH (${timeframe})`, value: windowHigh ? `$${windowHigh.toFixed(2)}` : 'N/A' }
+                                        { label: 'DAY CHANGE', value: quoteInfo[activeStock]?.percent_change != null ? `${formatFixed(quoteInfo[activeStock].percent_change, 2)}%` : 'N/A'},
+                                        { label: 'DAY RANGE',  value: quoteInfo[activeStock]?.low != null && quoteInfo[activeStock]?.high != null ? `$${formatFixed(quoteInfo[activeStock].low, 2)} – $${formatFixed(quoteInfo[activeStock].high, 2)}` : 'N/A' },
+                                        { label: `WINDOW LOW (${timeframe})`, value: windowLow ? `$${formatFixed(windowLow, 2)}` : 'N/A' },
+                                        { label: `WINDOW HIGH (${timeframe})`, value: windowHigh ? `$${formatFixed(windowHigh, 2)}` : 'N/A' }
                                     ].map((m, idx) => (
                                         <div key={idx} class={`border rounded-sm p-3 font-mono ${theme === 'dark' ? 'bg-[#0b0b0c] border-zinc-900' : 'bg-white border-zinc-200'}`}>
                                             <div class={`text-[8px] tracking-widest uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>{m.label}</div>
@@ -3140,7 +3176,7 @@ const analyzePatternLab = data => {
                                     <h3 class={`text-[10px] font-mono font-bold tracking-widest ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>PRICE ALERTS</h3>
                                     <div class="flex gap-2">
                                         <button onClick={requestNotificationPermission} class="text-[9px] font-mono text-[#00FF66]">NOTIFY</button>
-                                        <button onClick={() => setPriceAlerts([...priceAlerts,{id:Date.now(),ticker:activeStock,target:Number((stockPrices[activeStock]?.price||0).toFixed(2)),direction:'ABOVE',enabled:true,isDefault:false}])} class="text-[9px] font-mono text-[#00FF66]">+ ADD</button>
+                                        <button onClick={() => setPriceAlerts([...priceAlerts,{id:Date.now(),ticker:activeStock,target:Number(formatPrice(stockPrices[activeStock]?.price || 0)),direction:'ABOVE',enabled:true,isDefault:false}])} class="text-[9px] font-mono text-[#00FF66]">+ ADD</button>
                                     </div>
                                 </div>
                                 {priceAlerts.filter(a=>a.ticker===activeStock).map(a=>(
@@ -3313,7 +3349,7 @@ const analyzePatternLab = data => {
                                                     <span class={r.type === 'BULLISH' ? 'text-[#00FF66]' : 'text-red-500'}>{r.label}</span>
                                                 </td>
                                                 <td class="px-2">{r.time}</td>
-                                                <td class="text-right px-2">${Number(r.entry).toFixed(2)}</td>
+                                                <td class="text-right px-2">${formatPrice(r.entry)}</td>
                                                 <td class="text-right px-2">{context.priorTrend || '—'}</td>
                                                 <td class="text-right px-2">{fmtBody(context.bodyPct)}</td>
                                                 <td class="text-right px-2">{fmtRatio(r.volumeRatio)}</td>
