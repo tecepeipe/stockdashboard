@@ -1168,6 +1168,48 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 return json;
             };
 
+
+            // Provider market-data loader. The existing provider implementations are
+            // kept intact here so this refactor changes orchestration without changing
+            // provider behaviour.
+            const loadProviderMarketData = async ({
+                activeProvider,
+                watchlist,
+                timeframe,
+                selectedTimeframeConfig,
+                selectedInterval,
+                activeStock,
+                alpacaKeyId,
+                alpacaSecretKey,
+                apiKey,
+                setRenderedChartData,
+                writeTimeframeCache,
+                getTimeframeBars,
+                calculateTechnicalIndicators,
+                fetchAlphaVantageJson,
+                createMarketData
+            }) => {
+                await loadProviderMarketData({
+                    activeProvider,
+                    watchlist,
+                    timeframe,
+                    selectedTimeframeConfig,
+                    selectedInterval,
+                    activeStock,
+                    alpacaKeyId,
+                    alpacaSecretKey,
+                    apiKey,
+                    setRenderedChartData,
+                    writeTimeframeCache,
+                    getTimeframeBars,
+                    calculateTechnicalIndicators,
+                    fetchAlphaVantageJson,
+                    createMarketData
+                });
+
+
+            };
+
             const fetchPipelineData = React.useCallback(async (forceRefresh = false) => {
                 setSyncProgress(10);
                 setSyncStatusText('SCANNING CHANNELS...');
