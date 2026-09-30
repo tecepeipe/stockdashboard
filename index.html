@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="1.0.7">
+    <meta name="version" content="1.0.8">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -1559,6 +1559,46 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 return [];
             }, [activeProvider, apiKey, alpacaKeyId, alpacaSecretKey, hasLiveCredentials, fetchAlphaVantageJson]);
 
+            const resolveAlpacaAsset = React.useCallback(async (ticker) => {
+                const symbol = String(ticker || '').trim().toUpperCase();
+                if (!symbol || activeProvider !== 'ALPACA') return null;
+                const cacheKey = alpacaKeyId + ':' + alpacaSecretKey;
+                if (alpacaAssetsCacheRef.current.key !== cacheKey) {
+                    alpacaAssetsCacheRef.current = { key: cacheKey, assets: {}, loading: {} };
+                }
+                const cached = alpacaAssetsCacheRef.current.assets?.[symbol];
+                if (cached) return cached;
+                if (alpacaAssetsCacheRef.current.loading?.[symbol]) return alpacaAssetsCacheRef.current.loading[symbol];
+
+                const request = fetch('https://api.alpaca.markets/v2/assets/' + encodeURIComponent(symbol), {
+                    headers: {
+                        'APCA-API-KEY-ID': alpacaKeyId,
+                        'APCA-API-SECRET-KEY': alpacaSecretKey,
+                        'Accept': 'application/json'
+                    },
+                    cache: 'no-store'
+                }).then(async res => {
+                    const json = await res.json().catch(() => ({}));
+                    if (!res.ok || !json.symbol) return null;
+                    const asset = {
+                        ticker: String(json.symbol).toUpperCase(),
+                        name: json.name || String(json.symbol).toUpperCase(),
+                        exchange: json.exchange || 'US',
+                        currency: 'USD',
+                        source: 'ALPACA'
+                    };
+                    alpacaAssetsCacheRef.current.assets[asset.ticker] = asset;
+                    return asset;
+                }).catch(err => {
+                    console.warn('[ALPACA ASSET]', symbol, err);
+                    return null;
+                }).finally(() => {
+                    delete alpacaAssetsCacheRef.current.loading[symbol];
+                });
+                alpacaAssetsCacheRef.current.loading[symbol] = request;
+                return request;
+            }, [activeProvider, alpacaKeyId, alpacaSecretKey]);
+
             const addSearchSymbol = (node) => {
                 const ticker = String(node.ticker || '').toUpperCase();
                 if (!ticker) return;
@@ -1602,6 +1642,12 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                         });
                     }
                 }
+                if (activeProvider === 'ALPACA' && /^[A-Z0-9._-]{1,20}$/i.test(query)) {
+                    const asset = await resolveAlpacaAsset(query);
+                    if (asset) {
+                        setSuggestions(prev => [asset, ...prev.filter(item => item.ticker !== asset.ticker)].slice(0, 8));
+                    }
+                }
 
                 setSuggestions(localMatches.slice(0,8));
                 if (!hasLiveCredentials || query.length < 2) return;
@@ -1618,7 +1664,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                     });
                 },300);
                 return()=>clearTimeout(timer);
-            }, [searchQuery, hasLiveCredentials, activeProvider, apiKey, alpacaKeyId, alpacaSecretKey]);
+            }, [searchQuery, hasLiveCredentials, activeProvider, apiKey, alpacaKeyId, alpacaSecretKey, resolveAlpacaAsset]);
 
             const selectEngineNode = (node) => {
                 addSearchSymbol(node);
@@ -1656,13 +1702,8 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
                 if (hasLiveCredentials) {
                     if (activeProvider === 'ALPACA' && /^[A-Z0-9._-]{1,20}$/.test(upper)) {
-                        addSearchSymbol({
-                            ticker: upper,
-                            name: upper,
-                            exchange: 'US',
-                            currency: 'USD',
-                            source: 'ALPACA'
-                        });
+                        const asset = await resolveAlpacaAsset(upper);
+                        addSearchSymbol(asset || { ticker: upper, name: upper, exchange: 'US', currency: 'USD', source: 'ALPACA' });
                         return;
                     }
 
