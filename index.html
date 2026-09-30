@@ -1563,41 +1563,33 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 const symbol = String(ticker || '').trim().toUpperCase();
                 if (!symbol || activeProvider !== 'ALPACA') return null;
                 const cacheKey = alpacaKeyId + ':' + alpacaSecretKey;
-                if (alpacaAssetsCacheRef.current.key !== cacheKey) {
-                    alpacaAssetsCacheRef.current = { key: cacheKey, assets: {}, loading: {} };
-                }
+                if (alpacaAssetsCacheRef.current.key !== cacheKey) alpacaAssetsCacheRef.current = { key: cacheKey, assets: {}, loading: {} };
                 const cached = alpacaAssetsCacheRef.current.assets?.[symbol];
                 if (cached) return cached;
                 if (alpacaAssetsCacheRef.current.loading?.[symbol]) return alpacaAssetsCacheRef.current.loading[symbol];
 
-                const request = fetch('https://api.alpaca.markets/v2/assets/' + encodeURIComponent(symbol), {
-                    headers: {
-                        'APCA-API-KEY-ID': alpacaKeyId,
-                        'APCA-API-SECRET-KEY': alpacaSecretKey,
-                        'Accept': 'application/json'
-                    },
-                    cache: 'no-store'
-                }).then(async res => {
-                    const json = await res.json().catch(() => ({}));
-                    if (!res.ok || !json.symbol) return null;
-                    const asset = {
-                        ticker: String(json.symbol).toUpperCase(),
-                        name: json.name || String(json.symbol).toUpperCase(),
-                        exchange: json.exchange || 'US',
-                        currency: 'USD',
-                        source: 'ALPACA'
-                    };
-                    alpacaAssetsCacheRef.current.assets[asset.ticker] = asset;
-                    return asset;
-                }).catch(err => {
-                    console.warn('[ALPACA ASSET]', symbol, err);
+                const request = (async () => {
+                    for (const endpoint of ['https://api.alpaca.markets/v2/assets/','https://paper-api.alpaca.markets/v2/assets/']) {
+                        try {
+                            const res = await fetch(endpoint + encodeURIComponent(symbol), {
+                                headers: {'APCA-API-KEY-ID': alpacaKeyId, 'APCA-API-SECRET-KEY': alpacaSecretKey, 'Accept': 'application/json'},
+                                cache: 'no-store'
+                            });
+                            const json = await res.json().catch(() => ({}));
+                            if (res.ok && json.symbol) {
+                                const asset = {ticker: String(json.symbol).toUpperCase(), name: json.name || String(json.symbol).toUpperCase(), exchange: json.exchange || 'US', currency: 'USD', source: 'ALPACA'};
+                                alpacaAssetsCacheRef.current.assets[asset.ticker] = asset;
+                                return asset;
+                            }
+                            console.warn('[ALPACA ASSET]', symbol, res.status, json.message || json.code || '');
+                        } catch (err) { console.warn('[ALPACA ASSET]', symbol, err); }
+                    }
                     return null;
-                }).finally(() => {
-                    delete alpacaAssetsCacheRef.current.loading[symbol];
-                });
+                })().finally(() => { delete alpacaAssetsCacheRef.current.loading[symbol]; });
                 alpacaAssetsCacheRef.current.loading[symbol] = request;
                 return request;
             }, [activeProvider, alpacaKeyId, alpacaSecretKey]);
+
 
             const addSearchSymbol = (node) => {
                 const ticker = String(node.ticker || '').toUpperCase();
@@ -1655,6 +1647,867 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                 asset,
                                 ...prev.filter(item => item.ticker !== asset.ticker)
                             ].slice(0, 8));
+                        }
+                        return;
+                    }
+
+                    if (!hasLiveCredentials || query.length < 2) return;
+
+                    const liveMatches = await searchLiveSymbols(query);
+                    if (!cancelled && liveMatches.length) {
+                        setSuggestions(prev => {
+                            const merged = [...prev];
+                            liveMatches.forEach(item => {
+                                if (!merged.some(existing => existing.ticker === item.ticker)) merged.push(item);
+                            });
+                            return merged.slice(0, 8);
+                        });
+                    }
+                }, 300);
+
+                return () => {
+                    cancelled = true;
+                    clearTimeout(timer);
+                };
+            }, [searchQuery, hasLiveCredentials, activeProvider, apiKey, alpacaKeyId, alpacaSecretKey, resolveAlpacaAsset]);
+
+
+            const selectEngineNode = (node) => {
+                addSearchSymbol(node);
+            };
+
+            const activeCompanyMeta = resolvedSymbols[activeStock] ||
+                TICKER_DICTIONARY.find(i => i.ticker === activeStock) ||
+                { name: activeStock + ' Co.', exchange: 'US', cap: 'N/A', pe: 'N/A' };
+
+            const windowHigh = renderedChartData.length > 0 ? Math.max(...renderedChartData.map(d => d.high)) : 0;
+            const windowLow = renderedChartData.length > 0 ? Math.min(...renderedChartData.map(d => d.low)) : 0;
+
+            const activeLiveCap = stockPrices[activeStock] ? stockPrices[activeStock].cap : null;
+            
+            // Resolve final active statements object state (Prioritize true dynamic live financial metrics, fallback to mock matrix if key missing)
+            const showFinancials = activeProvider !== 'ALPACA';
+            const activeFinancialsData = ['TWELVEDATA', 'ALPHAVANTAGE'].includes(activeProvider) && liveFinancials[activeStock]
+                ? liveFinancials[activeStock]
+                : showFinancials ? generateFinancials(activeStock, activeLiveCap) : { annual: { performance: [], earnings: [] }, quarter: { performance: [], earnings: [] } };
+
+            const handleSearchKeyDown = async (e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                const query = searchQuery.trim();
+                if (!query) return;
+
+                const upper = query.toUpperCase();
+                const exactLocal = TICKER_DICTIONARY.find(s => s.ticker.toUpperCase() === upper);
+                const exactSuggestion = suggestions.find(s => s.ticker?.toUpperCase() === upper);
+
+                if (exactSuggestion) {
+                    addSearchSymbol(exactSuggestion);
+                    return;
+                }
+
+                if (hasLiveCredentials) {
+                    if (activeProvider === 'ALPACA' && /^[A-Z0-9._-]{1,20}$/.test(upper)) {
+                        const asset = await resolveAlpacaAsset(upper);
+                        addSearchSymbol(asset || { ticker: upper, name: upper, exchange: 'US', currency: 'USD', source: 'ALPACA' });
+                        return;
+                    }
+
+                    const matches = await searchLiveSymbols(query);
+                    if (matches.length) addSearchSymbol(matches[0]);
+                    return;
+                }
+
+                if (exactLocal) {
+                    addSearchSymbol({...exactLocal, source: 'DICTIONARY', currency: exactLocal.currency || 'USD'});
+                }
+            };
+            return (
+                <div class={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${theme === 'dark' ? 'bg-[#050505] text-zinc-400' : 'bg-[#f0f2f5] text-zinc-600'}`}>
+                    
+                    <div class="h-[2px] w-full bg-zinc-950 relative z-50">
+                        <div class={`h-full transition-all duration-300 ${hasLiveCredentials ? 'bg-[#00FF66]' : 'bg-blue-500'}`} style={{ width: `${syncProgress}%` }}></div>
+                    </div>
+
+                    <header class={`border-b px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-40 backdrop-blur-md ${theme === 'dark' ? 'border-zinc-900 bg-zinc-950/80' : 'border-zinc-200 bg-white/90'}`}>
+                        <div class="flex items-center space-x-4">
+                            <div class="bg-[#00FF66]/10 text-[#00FF66] px-3 py-1 text-[10px] font-mono font-bold tracking-widest rounded-sm border border-[#00FF66]/30">
+                                TRADING TERMINAL // NASDAQ
+                            </div>
+                            <h1 class={`text-sm font-bold tracking-wider font-mono uppercase ${theme === 'dark' ? 'text-white' : 'text-zinc-800'}`}>
+                                Stock Dashboard // <span class="text-zinc-500 font-normal">DataStream</span>
+                            </h1>
+                        </div>
+
+                        <div class="flex items-center space-x-3">
+                            <button title="Refresh data now" aria-label="Refresh data now" disabled={isRefreshing} onClick={handleManualRefresh} class={`h-[38px] w-[38px] rounded-md font-mono text-xs font-bold flex items-center justify-center border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700' : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-100'}`}>
+                                <span class={isRefreshing ? 'animate-spin' : ''}><Icons.Refresh /></span>
+                            </button>
+
+                            <div class="relative">
+                                <select
+                                    value={language}
+                                    onChange={e => setLanguage(e.target.value)}
+                                    aria-label="Language"
+                                    title="Language"
+                                    class={`h-[38px] w-[58px] appearance-none text-center rounded-md font-mono text-[10px] font-bold border cursor-pointer focus:outline-none ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700' : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-100'}`}
+                                >
+                                    {languageOptions.map(option => <option key={option.code} value={option.code}>{option.label}</option>)}
+                                </select>
+                            </div>
+
+                            <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} class={`min-h-[38px] px-3 rounded-md font-mono text-xs font-bold flex items-center space-x-2 border transition-all cursor-pointer ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700' : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-100'}`}>
+                                {theme === 'dark' ? <Icons.Sun /> : <Icons.Moon />}
+                            </button>
+
+                            <button onClick={() => setShowApiInput(!showApiInput)} class={`min-h-[38px] px-3 rounded-md border text-xs flex items-center space-x-2 font-mono transition-all cursor-pointer ${hasLiveCredentials ? 'border-[#00FF66]/40 text-[#00FF66]' : theme === 'dark' ? 'border-zinc-700 text-zinc-500' : 'border-zinc-300 text-zinc-500'}`}>
+                                <Icons.Key />
+                                <span class="hidden sm:inline font-bold">{activeProvider === 'ALPACA' ? 'ALPACA API' : activeProvider === 'ALPHAVANTAGE' ? 'ALPHAVANTAGE API' : activeProvider === 'TWELVEDATA' ? 'TWELVEDATA API' : 'DATA PROVIDER'}</span>
+                            </button>
+
+                            {hasLiveCredentials && (
+                                <button onClick={() => {
+                                    setApiKey('');
+                                    setAlpacaKeyId('');
+                                    setAlpacaSecretKey('');
+                                    localStorage.removeItem('matrix_twelvedata_key');
+                                    localStorage.removeItem('matrix_alpaca_key_id');
+                                    localStorage.removeItem('matrix_alpaca_secret_key');
+                                    localStorage.removeItem('matrix_alphavantage_key');
+                                }} class={`min-h-[38px] px-3 rounded-md border text-xs flex items-center space-x-2 font-mono transition-all cursor-pointer border-red-500/40 text-red-500`}>
+                                    <Icons.Trash />
+                                    <span class="hidden sm:inline font-bold">CLEAR API</span>
+                                </button>
+                            )}
+                        </div>
+                    </header>
+
+                    <div class={`px-6 py-2 border-b text-[10px] font-mono flex items-center justify-between tracking-wider ${hasLiveCredentials ? 'bg-emerald-900/10 text-emerald-500 border-emerald-950' : theme === 'dark' ? 'bg-zinc-900/40 text-zinc-500 border-zinc-900' : 'bg-zinc-100 text-zinc-500 border-zinc-200'}`}>
+                        <div class="flex items-center space-x-2">
+                            <span class="animate-pulse">●</span>
+                            <span>{syncStatusText} // {marketTelemetry.text}</span>
+                        </div>
+                        <div>TIMELINE TRACKER ACTIVE</div>
+                    </div>
+
+                    {showApiInput && (
+                        <div class={`border-b p-6 ${theme === 'dark' ? 'bg-zinc-950 border-zinc-900' : 'bg-white border-zinc-200'}`}>
+                            <div class="max-w-2xl mx-auto space-y-4">
+                                <h3 class="text-xs font-mono font-bold uppercase tracking-wider text-zinc-400">Market Data Provider</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div class="space-y-1">
+                                        <label class="text-[10px] font-mono text-zinc-500">ALPACA KEY ID</label>
+                                        <input type="password" id="alpaca_key_id_field" placeholder="OPTIONAL ALPACA KEY ID" defaultValue={alpacaKeyId} class={`w-full border rounded-md px-3 text-xs font-mono h-10 focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-[#00FF66]' : 'bg-zinc-50 border-zinc-300 text-[#00FF66]'}`} />
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="text-[10px] font-mono text-zinc-500">ALPACA SECRET KEY</label>
+                                        <input type="password" id="alpaca_secret_key_field" placeholder="OPTIONAL ALPACA SECRET KEY" defaultValue={alpacaSecretKey} class={`w-full border rounded-md px-3 text-xs font-mono h-10 focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-[#00FF66]' : 'bg-zinc-50 border-zinc-300 text-[#00FF66]'}`} />
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="text-[10px] font-mono text-zinc-500">ALPHAVANTAGE API KEY</label>
+                                        <input type="password" id="alphavantage_api_key_field" placeholder="OPTIONAL ALPHAVANTAGE KEY" defaultValue={alphaVantageKey} class={`w-full border rounded-md px-3 text-xs font-mono h-10 focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-[#00FF66]' : 'bg-zinc-50 border-zinc-300 text-[#00FF66]'}`} />
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="text-[10px] font-mono text-zinc-500">TWELVEDATA API KEY</label>
+                                        <input type="password" id="api_input_field" placeholder="OPTIONAL TWELVEDATA KEY" defaultValue={apiKey} class={`w-full border rounded-md px-3 text-xs font-mono h-10 focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-[#00FF66]' : 'bg-zinc-50 border-zinc-300 text-[#00FF66]'}`} />
+                                    </div>
+                                </div>
+                                <div class="text-[10px] font-mono text-zinc-500">If both Alpaca fields are provided, Alpaca is used. Otherwise Alpha Vantage is used when its key is present, then Twelve Data.<br />Credentials are stored in this browser's localStorage.</div>
+                                <div class="flex justify-end">
+                                    <button onClick={() => {
+                                        const twelveVal = document.getElementById('api_input_field').value.trim();
+                                        const alphaVal = document.getElementById('alphavantage_api_key_field').value.trim();
+                                        const alpacaIdVal = document.getElementById('alpaca_key_id_field').value.trim();
+                                        const alpacaSecretVal = document.getElementById('alpaca_secret_key_field').value.trim();
+                                        setApiKey(twelveVal);
+                                        setAlphaVantageKey(alphaVal);
+                                        setAlpacaKeyId(alpacaIdVal);
+                                        setAlpacaSecretKey(alpacaSecretVal);
+                                        localStorage.setItem('matrix_twelvedata_key', twelveVal);
+                                        localStorage.setItem('matrix_alphavantage_key', alphaVal);
+                                        localStorage.setItem('matrix_alpaca_key_id', alpacaIdVal);
+                                        localStorage.setItem('matrix_alpaca_secret_key', alpacaSecretVal);
+                                        setShowApiInput(false);
+                                    }} class="bg-[#00FF66] text-black px-4 text-xs font-mono font-bold rounded-md h-10 cursor-pointer">CONNECT</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-0 relative">
+                        
+                        <aside class={`lg:col-span-3 border-r flex flex-col relative z-20 ${theme === 'dark' ? 'border-zinc-900 bg-[#070708]' : 'border-zinc-200 bg-zinc-100'}`}>
+                            <div class={`p-4 border-b ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>
+                                <div class="relative">
+                                    <input type="text" value={searchQuery} onChange={executeSearchEngine} onKeyDown={handleSearchKeyDown} placeholder="SCAN CORE EXCHANGE INDEX..." class={`w-full border rounded-md pl-10 pr-4 py-2 text-xs font-mono uppercase focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-white placeholder-zinc-600' : 'bg-white border-zinc-300 text-zinc-800 placeholder-zinc-400'}`} />
+                                    <span class={`absolute left-3 top-2.5 ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}><Icons.Search /></span>
+                                
+
+                                {suggestions.length > 0 && (
+                                    <div class={`absolute left-0 right-0 top-full mt-1 max-h-[180px] overflow-y-auto border rounded-md shadow-2xl divide-y z-[100] ${theme === 'dark' ? 'bg-zinc-950 border-zinc-800 divide-zinc-900' : 'bg-white border-zinc-200 divide-zinc-100'}`}>
+                                        {suggestions.map(s => (
+                                            <div key={s.ticker} class={`p-3 flex items-center gap-3 text-xs font-mono ${theme === 'dark' ? 'hover:bg-zinc-900' : 'hover:bg-zinc-50'}`}>
+                                                <button type="button" title={`Add ${s.ticker} to watchlist`} onClick={() => addSearchSymbol(s)} class={`w-7 h-7 shrink-0 flex items-center justify-center rounded border transition-colors ${theme === 'dark' ? 'border-zinc-700 text-zinc-400 hover:text-[#00FF66] hover:border-[#00FF66]' : 'border-zinc-300 text-zinc-500 hover:text-green-600 hover:border-green-500'}`}>
+                                                    <Icons.Plus />
+                                                </button>
+                                                <div class="min-w-0 flex-1 cursor-pointer" onClick={() => addSearchSymbol(s)}>
+                                                    <div class={`font-bold ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>{s.ticker} <span class="text-[9px] text-zinc-500">({s.exchange})</span></div>
+                                                    <div class="text-zinc-500 truncate">{s.name}</div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                </div>                            </div>
+
+                            <div class={`p-3 text-[9px] font-mono tracking-widest uppercase border-b ${theme === 'dark' ? 'bg-zinc-950/40 text-zinc-500 border-zinc-900' : 'bg-zinc-100 text-zinc-400 border-zinc-200'}`}>Watchlist Matrix Grid</div>
+                            
+                            <div class={`flex-1 overflow-y-auto divide-y ${theme === 'dark' ? 'divide-zinc-900' : 'divide-zinc-200'}`}>
+                                {watchlist.map(ticker => {
+                                    const details = stockPrices[ticker] || { price: 0.00, change: 0.00, volume: 'N/A' };
+                                    const isUp = details.change >= 0;
+                                    const isSelected = activeStock === ticker;
+                                    const dictRef = TICKER_DICTIONARY.find(i => i.ticker === ticker);
+
+                                    return (
+                                        <div key={ticker} onClick={() => setActiveStock(ticker)} class={`p-4 flex items-center justify-between cursor-pointer transition-all ${isSelected ? (theme === 'dark' ? 'bg-zinc-900/60' : 'bg-zinc-200/60') : (theme === 'dark' ? 'hover:bg-zinc-900/20' : 'hover:bg-zinc-100')} ${isSelected ? 'border-l-2 border-[#00FF66]' : ''}`}>
+                                            <div>
+                                                <div class="flex items-center space-x-2 font-mono">
+                                                    <span class={`text-sm font-bold ${isSelected ? 'text-[#00FF66]' : 'text-zinc-300'}`}>{ticker}</span>
+                                                    <span class={`text-[8px] px-1 border rounded-sm ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-600' : 'bg-zinc-100 border-zinc-300 text-zinc-500'}`}>{resolvedSymbols[ticker]?.exchange || dictRef?.exchange || 'US'}</span>
+                                                </div>
+                                                <div class={`text-[10px] font-mono ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>V: {details.volume}</div>
+                                            </div>
+                                            <div class="flex items-center space-x-3 font-mono text-right">
+                                                <div>
+                                                    <div class={`text-xs font-bold ${theme === 'dark' ? 'text-zinc-200' : 'text-zinc-800'}`}>${details.price.toFixed(2)}</div>
+                                                    <div class={`text-[9px] font-bold flex items-center justify-end ${isUp ? 'text-[#00FF66]' : 'text-red-500'}`}>
+                                                        {isUp ? '+' : ''}{details.change.toFixed(2)}%
+                                                    </div>
+                                                </div>
+                                                <button onClick={(e) => { e.stopPropagation(); setWatchlist(watchlist.filter(w => w !== ticker)); }} class={`${theme === 'dark' ? 'text-zinc-700' : 'text-zinc-400'} hover:text-red-500`}><Icons.Trash /></button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </aside>
+
+                        <main class={`lg:col-span-6 flex flex-col overflow-hidden transition-all duration-300 ${isMaximized ? `fixed inset-0 z-50 p-6 ${theme === 'dark' ? 'bg-[#050505]' : 'bg-[#f0f2f5]'}` : `${theme === 'dark' ? 'border-zinc-900 bg-zinc-950/20' : 'border-zinc-200 bg-white'}`}`}>
+                            <div class={`px-6 py-3 border-b flex flex-wrap items-center justify-between gap-y-2 relative z-10 ${theme === 'dark' ? 'border-zinc-900 bg-zinc-950/40' : 'border-zinc-200 bg-zinc-50'}`}>
+                                <div class="flex items-center space-x-4">
+                                    <span class={`text-[10px] font-mono font-bold tracking-wider ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>TIMEFRAME</span>
+                                    <div class={`flex p-0.5 rounded-sm border ${theme === 'dark' ? 'bg-zinc-950 border-zinc-900' : 'bg-zinc-100 border-zinc-200'}`}>
+                                        {['1D', '1W', '1M', '1Y'].map(t => (
+                                            <button key={t} onClick={() => setTimeframe(t)} class={`px-2 py-1 text-[9px] font-mono font-bold transition-all rounded-xs cursor-pointer ${timeframe === t ? 'bg-[#00FF66] text-black' : `${theme === 'dark' ? 'text-zinc-600 hover:text-zinc-400' : 'text-zinc-500 hover:text-zinc-700'}`}`}>{t}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                                
+                                <div class="flex items-center space-x-4">
+                                    <button 
+                                        onClick={() => setShowPatterns(!showPatterns)} 
+                                        class={`px-3 py-1 text-[9px] font-mono font-bold border rounded-xs transition-all flex items-center space-x-1.5 cursor-pointer ${showPatterns ? 'bg-emerald-900/20 border-[#00FF66] text-[#00FF66]' : theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800 text-zinc-500' : 'bg-zinc-100 border-zinc-300 text-zinc-500'}`}
+                                    >
+                                        <Icons.Eye />
+                                        <span>CANDLESTICK PATTERNS: {showPatterns ? 'ON' : 'OFF'}</span>
+                                    </button>
+
+                                    <button onClick={() => setShowPatternLab(!showPatternLab)} class={`px-3 py-1 text-[9px] font-mono font-bold border rounded-xs cursor-pointer ${showPatternLab ? 'border-blue-500 text-blue-400' : theme === 'dark' ? 'border-zinc-800 text-zinc-500' : 'border-zinc-300 text-zinc-500'}`}>PATTERN LAB</button>
+
+                                    <button onClick={() => setIsMaximized(!isMaximized)} class={`${theme === 'dark' ? 'text-zinc-600 hover:text-zinc-400' : 'text-zinc-400 hover:text-zinc-600'} cursor-pointer`}>
+                                        {isMaximized ? <Icons.Minimize /> : <Icons.Maximize />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="flex-1 p-6 flex flex-col justify-between overflow-hidden relative z-10">
+                                <div class={`flex items-center justify-between border-b pb-4 ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>
+                                    <h2 class={`text-xl font-bold font-mono tracking-wider ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
+                                        {activeStock}
+                                        <span class={`text-xs font-normal ml-2 ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>// {activeCompanyMeta.name}</span>
+                                    </h2>
+                                    <div class="text-xl font-bold font-mono text-[#00FF66] bg-[#00FF66]/5 border border-[#00FF66]/20 px-3 py-1 rounded-sm">
+                                        ${stockPrices[activeStock] ? stockPrices[activeStock].price.toFixed(2) : '0.00'}
+                                    </div>
+                                </div>
+
+                                <div class="flex-1 w-full relative pt-4 overflow-hidden">
+                                    <CandlestickChart key={`${activeProvider}-${activeStock}-${timeframe}-${renderedChartData.length}-${renderedChartData[renderedChartData.length - 1]?.time || ''}`} vectorData={renderedChartData} theme={theme} showPatterns={showPatterns} />
+                                </div>
+                            </div>
+                            {showPatternLab && <PatternLab data={renderedChartData} theme={theme} />}
+                        </main>
+
+                        <aside class={`lg:col-span-3 flex flex-col overflow-y-auto divide-y ${theme === 'dark' ? 'bg-[#070708] divide-zinc-900' : 'bg-zinc-50 divide-zinc-200'}`}>
+                            <div class="p-6 space-y-4">
+                                <h3 class={`text-[10px] font-mono font-bold tracking-widest uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>QUANTITATIVE DATA MATRIX</h3>
+                                <div class="grid grid-cols-2 gap-3">
+                                    {[
+                                        { label: 'MARKET CAP', value: stockPrices[activeStock] ? stockPrices[activeStock].cap : activeCompanyMeta.cap },
+                                         { label: 'P/E RATIO', value: stockPrices[activeStock] ? stockPrices[activeStock].pe : activeCompanyMeta.pe },
+                                        { label: 'DAY CHANGE', value: quoteInfo[activeStock]?.percent_change != null ? `${Number(quoteInfo[activeStock].percent_change).toFixed(2)}%` : 'N/A'},
+                                        { label: 'DAY RANGE',  value: quoteInfo[activeStock]?.low != null && quoteInfo[activeStock]?.high != null ? `$${Number(quoteInfo[activeStock].low).toFixed(2)} – $${Number(quoteInfo[activeStock].high).toFixed(2)}` : 'N/A' },
+                                        { label: `WINDOW LOW (${timeframe})`, value: windowLow ? `$${windowLow.toFixed(2)}` : 'N/A' },
+                                        { label: `WINDOW HIGH (${timeframe})`, value: windowHigh ? `$${windowHigh.toFixed(2)}` : 'N/A' }
+                                    ].map((m, idx) => (
+                                        <div key={idx} class={`border rounded-sm p-3 font-mono ${theme === 'dark' ? 'bg-[#0b0b0c] border-zinc-900' : 'bg-white border-zinc-200'}`}>
+                                            <div class={`text-[8px] tracking-widest uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>{m.label}</div>
+                                            <div class={`text-xs font-bold mt-1 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>{m.value}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div class={`p-6 space-y-3 border-b ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>
+                                <div class="flex items-center justify-between">
+                                    <h3 class={`text-[10px] font-mono font-bold tracking-widest ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>PRICE ALERTS</h3>
+                                    <div class="flex gap-2">
+                                        <button onClick={requestNotificationPermission} class="text-[9px] font-mono text-[#00FF66]">NOTIFY</button>
+                                        <button onClick={() => setPriceAlerts([...priceAlerts,{id:Date.now(),ticker:activeStock,target:Number((stockPrices[activeStock]?.price||0).toFixed(2)),direction:'ABOVE',enabled:true,isDefault:false}])} class="text-[9px] font-mono text-[#00FF66]">+ ADD</button>
+                                    </div>
+                                </div>
+                                {priceAlerts.filter(a=>a.ticker===activeStock).map(a=>(
+                                    <div key={a.id} class={`space-y-2 text-[10px] font-mono p-2 ${theme === 'dark' ? 'bg-zinc-950 border border-zinc-900' : 'bg-white border border-zinc-200'}`}>
+                                        <div class="flex items-center justify-between gap-2">
+                                            <select value={a.direction} onChange={e=>setPriceAlerts(priceAlerts.map(x=>x.id===a.id?{...x,direction:e.target.value,isDefault:false}:x))} class="bg-transparent text-[10px]">
+                                                <option value="ABOVE">ABOVE</option><option value="BELOW">BELOW</option>
+                                            </select>
+                                            <input type="number" step="0.01" value={a.target} onChange={e=>setPriceAlerts(priceAlerts.map(x=>x.id===a.id?{...x,target:Number(e.target.value),isDefault:false}:x))} class="w-20 bg-transparent border-b border-zinc-700 text-right"/>
+                                            <button onClick={()=>setPriceAlerts(priceAlerts.filter(x=>x.id!==a.id))} class="text-red-500">REMOVE</button>
+                                        </div>
+                                        <label class="flex items-center gap-2 text-[9px]"><input type="checkbox" checked={a.enabled!==false} onChange={e=>setPriceAlerts(priceAlerts.map(x=>x.id===a.id?{...x,enabled:e.target.checked,isDefault:false}:x))}/> ENABLED · ±5% proximity</label>
+                                    </div>
+                                ))}
+                                <div class="text-[9px] font-mono text-zinc-500">Notifications: {notificationStatus}</div>
+                            </div>
+                            {showFinancials && <div class="p-6 space-y-4 flex-1 flex flex-col">
+                                <div class="flex items-center justify-between">
+                                    <h3 class={`text-[10px] font-mono font-bold tracking-widest uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>FINANCIAL STATEMENTS</h3>
+                                    <div class={`flex border p-0.5 rounded-sm ${theme === 'dark' ? 'bg-zinc-950 border-zinc-900' : 'bg-zinc-100 border-zinc-200'}`}>
+                                        {['annual', 'quarter'].map(mode => (
+                                            <button key={mode} onClick={() => setFinancialView(mode)} class={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-xs uppercase cursor-pointer ${financialView === mode ? 'bg-[#00FF66] text-black' : theme === 'dark' ? 'text-zinc-600' : 'text-zinc-500'}`}>{mode.slice(0, 4)}</button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div class="space-y-4 flex-1 justify-around pt-2">
+                                    <div>
+                                        <div class={`text-[9px] font-mono mb-2 tracking-wider uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>Performance Metrics (REV vs NET)</div>
+                                        <div class="space-y-2">
+                                            {activeFinancialsData[financialView]?.performance && activeFinancialsData[financialView].performance.length > 0 ? (
+                                                activeFinancialsData[financialView].performance.map((item, i) => {
+                                                    const maxRev = Math.max(...activeFinancialsData[financialView].performance.map(p => p.revenue || 1));
+                                                    return (
+                                                        <div key={i} class="font-mono text-[10px] space-y-1">
+                                                            <div class={`flex justify-between ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-500'}`}>
+                                                                <span>{item.period}</span>
+                                                                <span class={`text-[9px] ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>R: {item.revenue}B / N: {item.netIncome}B</span>
+                                                            </div>
+                                                            <div class={`w-full h-1.5 rounded-xs overflow-hidden relative ${theme === 'dark' ? 'bg-zinc-900' : 'bg-zinc-200'}`}>
+                                                                <div class="bg-blue-600 h-full absolute top-0 left-0" style={{ width: `${(item.revenue/maxRev)*100}%` }}></div>
+                                                            </div>
+                                                            <div class={`w-full h-1 rounded-xs overflow-hidden relative ${theme === 'dark' ? 'bg-zinc-900' : 'bg-zinc-200'}`}>
+                                                                <div class="bg-[#00FF66] h-full absolute top-0 left-0" style={{ width: `${(item.netIncome/maxRev)*100}%` }}></div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            ) : (
+                                                <div class={`text-[10px] font-mono italic ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>No historical data segments loaded.</div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <div class={`text-[9px] font-mono mb-2 tracking-wider uppercase ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>EPS Forecast Vectors</div>
+                                        <div class="space-y-2">
+                                            {activeFinancialsData[financialView]?.earnings.map((item, i) => (
+                                                <div key={i} class={`font-mono text-[10px] flex justify-between items-center p-2 rounded-sm ${theme === 'dark' ? 'bg-zinc-950 border border-zinc-900' : 'bg-white border border-zinc-200'}`}>
+                                                    <span class={`font-bold ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500'}`}>{item.period}</span>
+                                                    <span class={theme === 'dark' ? 'text-zinc-400' : 'text-zinc-600'}>ACT: <strong class="text-amber-500">${item.actual}</strong></span>
+                                                    <span class={theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}>EST: ${item.forecast}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>}
+                        </aside>
+
+                    </div>
+                </div>
+            );
+        }
+
+        function CandlestickChart({ vectorData, theme, showPatterns }) {
+            const [hoverNode, setHoverNode] = React.useState(null);
+            const [rangeSelection, setRangeSelection] = React.useState(null);
+            const [isSelectingRange, setIsSelectingRange] = React.useState(false);
+
+            if (!vectorData || vectorData.length === 0) {
+                return <div class="h-full flex items-center justify-center font-mono text-xs text-zinc-700 animate-pulse">CONNECTING INTERFACE PIPELINES...</div>;
+            }
+
+            const highLowPrices = vectorData.map(d => [d.high, d.low]).flat();
+            const maxPrice = Math.max(...highLowPrices) * 1.01;
+            const minPrice = Math.min(...highLowPrices) * 0.99;
+            const priceDelta = maxPrice - minPrice || 1;
+
+            const macdIndicators = vectorData.map(d => [d.macd, d.signal, d.hist]).flat();
+            const maxMacd = Math.max(...macdIndicators, 0.02);
+            const minMacd = Math.min(...macdIndicators, -0.02);
+            const macdDelta = maxMacd - minMacd || 1;
+
+            const widthDimension = 700;
+            const heightDimension = 450;
+            
+            // Give each panel dedicated space: price remains dominant, while RSI/MACD
+            // are large enough to read without compressing their signals.
+            const panelGap = 10;
+            const candleAreaHeight = heightDimension * 0.47;
+            const rsiAreaHeight = heightDimension * 0.20;
+            const macdAreaHeight = heightDimension * 0.23;
+
+            const rsiTop = candleAreaHeight + panelGap;
+            const macdTop = rsiTop + rsiAreaHeight + panelGap;
+            const horizontalStep = widthDimension / vectorData.length;
+
+            const identifiedPatterns = showPatterns ? scanCandlestickPatterns(vectorData) : [];
+
+            // Derive simple horizontal support/resistance levels from repeated swing points.
+            // Levels are calculated from the same visible candles rendered by this chart.
+            const levelTolerance = Math.max(priceDelta * 0.015, 0.01);
+            const swingPoints = [];
+            for (let i = 2; i < vectorData.length - 2; i++) {
+                const d = vectorData[i];
+                const isSwingHigh =
+                    d.high >= vectorData[i - 1].high &&
+                    d.high >= vectorData[i - 2].high &&
+                    d.high >= vectorData[i + 1].high &&
+                    d.high >= vectorData[i + 2].high;
+                const isSwingLow =
+                    d.low <= vectorData[i - 1].low &&
+                    d.low <= vectorData[i - 2].low &&
+                    d.low <= vectorData[i + 1].low &&
+                    d.low <= vectorData[i + 2].low;
+
+                if (isSwingHigh) swingPoints.push({ price: d.high, type: 'resistance' });
+                if (isSwingLow) swingPoints.push({ price: d.low, type: 'support' });
+            }
+
+            const clusterLevels = (points, type) => {
+                const clusters = [];
+                points.filter(p => p.type === type).forEach(point => {
+                    const existing = clusters.find(c => Math.abs(c.price - point.price) <= levelTolerance);
+                    if (existing) {
+                        existing.prices.push(point.price);
+                        existing.price = existing.prices.reduce((a, b) => a + b, 0) / existing.prices.length;
+                        existing.touches++;
+                    } else {
+                        clusters.push({ price: point.price, prices: [point.price], touches: 1, type });
+                    }
+                });
+                return clusters
+                    .filter(c => c.touches >= 2)
+                    .sort((a, b) => b.touches - a.touches || a.price - b.price)
+                    .slice(0, 3);
+            };
+
+            const supportLevels = clusterLevels(swingPoints, 'support');
+            const resistanceLevels = clusterLevels(swingPoints, 'resistance');
+
+            const chartLabelBg = theme === 'dark' ? '#09090b' : '#ffffff';
+            const chartLabelText = theme === 'dark' ? '#a1a1aa' : '#52525b';
+
+            const selectedRange = rangeSelection && vectorData.length > 0
+                ? (() => {
+                    const startIndex = Math.max(0, Math.min(rangeSelection.start, rangeSelection.end));
+                    const endIndex = Math.min(vectorData.length - 1, Math.max(rangeSelection.start, rangeSelection.end));
+                    const startCandle = vectorData[startIndex];
+                    const endCandle = vectorData[endIndex];
+                    const priceChange = endCandle.close - startCandle.close;
+                    const percentChange = startCandle.close !== 0 ? (priceChange / startCandle.close) * 100 : 0;
+                    return { startIndex, endIndex, startCandle, endCandle, priceChange, percentChange };
+                })()
+                : null;
+
+            return (
+                <div class="w-full h-full flex flex-col justify-between">
+                    <div class={`mb-3 p-2 rounded-sm font-mono text-[10px] flex flex-wrap gap-x-4 gap-y-1 ${theme === 'dark' ? 'bg-zinc-950 border border-zinc-900 text-zinc-500' : 'bg-white border border-zinc-200 text-zinc-600'}`}>
+                        <span class={`${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'} font-bold`}>STREAM LOGS //</span>
+                        {hoverNode ? (
+                            <>
+                                <span>T: <strong class="text-white">{hoverNode.time}</strong></span>
+                                <span>O: <strong class="text-zinc-400">${hoverNode.open.toFixed(2)}</strong></span>
+                                <span>H: <strong class="text-[#00FF66]">${hoverNode.high.toFixed(2)}</strong></span>
+                                <span>L: <strong class="text-red-500">${hoverNode.low.toFixed(2)}</strong></span>
+                                <span>C: <strong class="text-blue-400">${hoverNode.close.toFixed(2)}</strong></span>
+                                <span>RSI: <strong class="text-purple-400">{hoverNode.rsi}</strong></span>
+                                <span>MACD: <strong class="text-blue-500">{hoverNode.macd}</strong></span>
+                                {selectedRange ? (
+                                    <span>RANGE: <strong class={selectedRange.percentChange >= 0 ? 'text-[#00FF66]' : 'text-red-500'}>
+                                        {selectedRange.percentChange >= 0 ? '+' : ''}{selectedRange.percentChange.toFixed(2)}%
+                                    </strong> <span class="text-zinc-500">({selectedRange.priceChange >= 0 ? '+' : ''}${selectedRange.priceChange.toFixed(2)})</span></span>
+                                ) : (
+                                    <span>RANGE: <strong class={hoverNode.close >= hoverNode.open ? 'text-[#00FF66]' : 'text-red-500'}>
+                                        {(((hoverNode.high - hoverNode.low) / hoverNode.low) * 100).toFixed(2)}%
+                                    </strong></span>
+                                )}
+                            </>
+                        ) : (
+                            <span class="italic text-zinc-600">HOVER INTERACTIVE CROSSHAIR NODE ON CHART CELLS</span>
+                        )}
+                    </div>
+
+                    <div class="flex-1 relative overflow-hidden">
+                        <svg width="100%" height="100%" viewBox={`0 0 ${widthDimension} ${heightDimension}`} preserveAspectRatio="none" class="overflow-visible">
+                            
+                            <line x1={0} y1={candleAreaHeight} x2={widthDimension} y2={candleAreaHeight} stroke="#1f1f23" strokeWidth="1" />
+                            <line x1={0} y1={rsiTop} x2={widthDimension} y2={rsiTop} stroke="#1f1f23" strokeWidth="1" />
+                            <line x1={0} y1={rsiTop + rsiAreaHeight} x2={widthDimension} y2={rsiTop + rsiAreaHeight} stroke="#1f1f23" strokeWidth="1" />
+                            <line x1={0} y1={macdTop} x2={widthDimension} y2={macdTop} stroke="#1f1f23" strokeWidth="1" />
+
+                            <g pointerEvents="none">
+                                <rect x="6" y="6" width="142" height="16" rx="2" fill={chartLabelBg} opacity="0.92" />
+                                <text x="12" y="17" fill={chartLabelText} fontSize="8" fontFamily="monospace" fontWeight="bold">PRICE ACTION // OHLC</text>
+                                <rect x="6" y={rsiTop + 6} width="116" height="16" rx="2" fill={chartLabelBg} opacity="0.92" />
+                                <text x="12" y={rsiTop + 17} fill="#c084fc" fontSize="8" fontFamily="monospace" fontWeight="bold">RSI (14) // 30 / 70</text>
+                                <rect x="6" y={macdTop + 6} width="142" height="16" rx="2" fill={chartLabelBg} opacity="0.92" />
+                                <text x="12" y={macdTop + 17} fill="#60a5fa" fontSize="8" fontFamily="monospace" fontWeight="bold">MACD (12,26,9)</text>
+                                <text x="155" y={macdTop + 17} fill="#60a5fa" fontSize="7" fontFamily="monospace">MACD</text>
+                                <text x="195" y={macdTop + 17} fill="#eab308" fontSize="7" fontFamily="monospace">SIGNAL</text>
+                                <text x="242" y={macdTop + 17} fill="#71717a" fontSize="7" fontFamily="monospace">HIST</text>
+                            </g>
+
+                            {(() => {
+                                const zeroY = macdTop + (macdAreaHeight * (1 - (0 - minMacd) / macdDelta));
+                                return (
+                                    <g>
+                                        <line x1={0} y1={zeroY} x2={widthDimension} y2={zeroY} stroke="rgba(161,161,170,0.32)" strokeWidth="1" strokeDasharray="4,3" />
+                                        <text x={widthDimension - 5} y={zeroY - 3} textAnchor="end" fill="#6b7280" fontSize="7" fontFamily="monospace">0</text>
+                                    </g>
+                                );
+                            })()}
+
+                            {[...supportLevels, ...resistanceLevels].map((level, idx) => {
+                                const yPos = candleAreaHeight * (1 - (level.price - minPrice) / priceDelta);
+                                const isResistance = level.type === 'resistance';
+                                const lineColor = isResistance ? '#ef4444' : '#00FF66';
+                                return (
+                                    <g key={`sr-${level.type}-${idx}`}>
+                                        <line
+                                            x1={0}
+                                            y1={yPos}
+                                            x2={widthDimension}
+                                            y2={yPos}
+                                            stroke={lineColor}
+                                            strokeOpacity="0.42"
+                                            strokeWidth="1.2"
+                                            strokeDasharray="6,4"
+                                        />
+                                        <rect
+                                            x={widthDimension - 68}
+                                            y={yPos - 9}
+                                            width="63"
+                                            height="12"
+                                            rx="2"
+                                            fill={chartLabelBg}
+                                            opacity="0.92"
+                                        />
+                                        <text
+                                            x={widthDimension - 8}
+                                            y={yPos}
+                                            textAnchor="end"
+                                            fill={lineColor}
+                                            fontSize="7"
+                                            fontFamily="monospace"
+                                            fontWeight="bold"
+                                        >
+                                            {isResistance ? 'R' : 'S'} ${level.price.toFixed(2)}
+                                        </text>
+                                    </g>
+                                );
+                            })}
+
+                            {[30, 50, 70].map(val => {
+                                const yPos = rsiTop + (rsiAreaHeight * (1 - val / 100));
+                                return (
+                                    <g key={`rsi-${val}`}>
+                                        <line x1={0} y1={yPos} x2={widthDimension} y2={yPos} stroke={val === 50 ? "rgba(255,255,255,0.04)" : "rgba(168,85,247,0.15)"} strokeWidth={val === 50 ? "1" : "1.2"} strokeDasharray={val === 50 ? "2,2" : "4,4"} />
+                                        <text x={widthDimension - 5} y={yPos - 2} textAnchor="end" fill="#6b7280" fontSize="7" fontFamily="monospace">RSI {val}</text>
+                                    </g>
+                                );
+                            })}
+
+                            {selectedRange && (() => {
+                                const leftX = selectedRange.startIndex * horizontalStep;
+                                const rightX = (selectedRange.endIndex + 1) * horizontalStep;
+                                const startCenterX = selectedRange.startIndex * horizontalStep + (horizontalStep / 2);
+                                const endCenterX = selectedRange.endIndex * horizontalStep + (horizontalStep / 2);
+                                return (
+                                    <g pointerEvents="none">
+                                        <rect x={leftX} y={0} width={Math.max(rightX - leftX, horizontalStep)} height={heightDimension} fill="rgba(59,130,246,0.08)" />
+                                        <line x1={startCenterX} y1={0} x2={startCenterX} y2={heightDimension} stroke="rgba(59,130,246,0.75)" strokeWidth="1" strokeDasharray="4,3" />
+                                        <line x1={endCenterX} y1={0} x2={endCenterX} y2={heightDimension} stroke="rgba(59,130,246,0.75)" strokeWidth="1" strokeDasharray="4,3" />
+                                    </g>
+                                );
+                            })()}
+
+                            {hoverNode && !isSelectingRange && (() => {
+                                const targetIdx = vectorData.indexOf(hoverNode);
+                                if (targetIdx !== -1) {
+                                    const centerX = targetIdx * horizontalStep + (horizontalStep / 2);
+                                    return <line x1={centerX} y1={0} x2={centerX} y2={heightDimension} stroke="rgba(0,255,102,0.15)" strokeWidth="1" strokeDasharray="2,2" />;
+                                }
+                            })()}
+
+                            {identifiedPatterns.map((pat, idx) => {
+                                const pad = 3;
+                                const leftX = pat.startIndex * horizontalStep + pad;
+                                const rightX = (pat.endIndex + 1) * horizontalStep - pad;
+                                const width = rightX - leftX;
+                                
+                                const segmentData = vectorData.slice(pat.startIndex, pat.endIndex + 1);
+                                const segHighs = segmentData.map(d => d.high);
+                                const segLows = segmentData.map(d => d.low);
+                                
+                                const topY = candleAreaHeight * (1 - (Math.max(...segHighs) - minPrice) / priceDelta) - pad;
+                                const bottomY = candleAreaHeight * (1 - (Math.min(...segLows) - minPrice) / priceDelta) + pad;
+                                const height = bottomY - topY;
+
+                                const highlightColor = pat.type === 'BULLISH' ? '#00FF66' : '#ef4444';
+
+                                return (
+                                    <g key={`pat-${idx}`}>
+                                        <rect 
+                                            x={leftX} y={topY} width={width} height={height} 
+                                            fill="transparent" stroke={highlightColor} 
+                                            strokeWidth="1.5" strokeDasharray="3,3" rx="2" 
+                                        />
+                                    </g>
+                                );
+                            })}
+
+                            {showPatterns && (
+                                <g transform={`translate(${widthDimension - 140}, 15)`}>
+                                    <rect x="0" y="0" width="130" height="36" fill="#09090b" stroke="#18181b" strokeWidth="1" rx="3" opacity="0.9"/>
+                                    <circle cx="12" cy="12" r="4" fill="#00FF66" />
+                                    <text x="24" y="15" fill="#a1a1aa" fontSize="8" fontFamily="monospace" fontWeight="bold">BULLISH REVERSAL</text>
+                                    <circle cx="12" cy="24" r="4" fill="#ef4444" />
+                                    <text x="24" y="27" fill="#a1a1aa" fontSize="8" fontFamily="monospace" fontWeight="bold">BEARISH REVERSAL</text>
+                                </g>
+                            )}
+
+                            {vectorData.map((d, i) => {
+                                const x = i * horizontalStep + (horizontalStep / 2);
+                                const yOpen = candleAreaHeight * (1 - (d.open - minPrice) / priceDelta);
+                                const yClose = candleAreaHeight * (1 - (d.close - minPrice) / priceDelta);
+                                const yHigh = candleAreaHeight * (1 - (d.high - minPrice) / priceDelta);
+                                const yLow = candleAreaHeight * (1 - (d.low - minPrice) / priceDelta);
+                                
+                                const isGreen = d.close >= d.open;
+                                const baseColor = isGreen ? '#00FF66' : '#ef4444';
+
+                                const yRsi = rsiTop + (rsiAreaHeight * (1 - d.rsi / 100));
+
+                                const yMacd = macdTop + (macdAreaHeight * (1 - (d.macd - minMacd) / macdDelta));
+                                const ySignal = macdTop + (macdAreaHeight * (1 - (d.signal - minMacd) / macdDelta));
+                                const yZeroMacd = macdTop + (macdAreaHeight * (1 - (0 - minMacd) / macdDelta));
+                                const yHist = macdTop + (macdAreaHeight * (1 - (d.hist - minMacd) / macdDelta));
+
+                                return (
+                                    <g key={i}>
+                                        <line x1={x} y1={yHigh} x2={x} y2={yLow} stroke={baseColor} strokeWidth="1" />
+                                        <rect x={x - (horizontalStep * 0.25)} y={Math.min(yOpen, yClose)} width={horizontalStep * 0.5} height={Math.max(Math.abs(yOpen - yClose), 1)} fill={isGreen ? '#00FF66' : 'transparent'} stroke={baseColor} strokeWidth="1" />
+
+                                        <line x1={x} y1={yZeroMacd} x2={x} y2={yHist} stroke={d.hist >= 0 ? '#00FF66' : '#ef4444'} strokeWidth={horizontalStep * 0.3} opacity="0.3" />
+
+                                        {i > 0 && (() => {
+                                            const prevX = (i - 1) * horizontalStep + (horizontalStep / 2);
+                                            const prevRsi = rsiTop + (rsiAreaHeight * (1 - vectorData[i-1].rsi / 100));
+                                            const prevMacd = macdTop + (macdAreaHeight * (1 - (vectorData[i-1].macd - minMacd) / macdDelta));
+                                            const prevSignal = macdTop + (macdAreaHeight * (1 - (vectorData[i-1].signal - minMacd) / macdDelta));
+                                            return (
+                                                <g>
+                                                    <line x1={prevX} y1={prevRsi} x2={x} y2={yRsi} stroke="#a855f7" strokeWidth="1" opacity="0.8" />
+                                                    <line x1={prevX} y1={prevMacd} x2={x} y2={yMacd} stroke="#3b82f6" strokeWidth="1" />
+                                                    <line x1={prevX} y1={prevSignal} x2={x} y2={ySignal} stroke="#eab308" strokeWidth="0.8" strokeDasharray="1,1" />
+                                                </g>
+                                            );
+                                        })()}
+                                    </g>
+                                );
+                            })}
+
+                            {vectorData.map((d, i) => (
+                                <rect 
+                                    key={`box-${i}`}
+                                    x={i * horizontalStep} y={0} width={horizontalStep} height={heightDimension}
+                                    fill="transparent" class="cursor-crosshair pointer-events-auto"
+                                    onMouseEnter={() => {
+                                        setHoverNode(d);
+                                        if (isSelectingRange) {
+                                            setRangeSelection(prev => prev ? { ...prev, end: i } : { start: i, end: i });
+                                        }
+                                    }}
+                                    onMouseLeave={() => setHoverNode(null)}
+                                    onMouseDown={(event) => {
+                                        event.preventDefault();
+                                        setIsSelectingRange(true);
+                                        setRangeSelection({ start: i, end: i });
+                                    }}
+                                    onMouseUp={() => setIsSelectingRange(false)}
+                                />
+                            ))}
+                        </svg>
+                    </div>
+                </div>
+            );
+        }
+
+        function PatternLab({data, theme}) {
+            const rows = getPatternStatisticsSafe(data);
+            const completed = rows.filter(r => r.completed);
+            const open = rows.filter(r => !r.completed);
+            const avg = items => items.length ? items.reduce((s,r) => s + (r.directionAdjusted || 0),0) / items.length : 0;
+            const winRate = items => items.length ? items.filter(r => r.directionAdjusted > 0).length / items.length * 100 : 0;
+            const median = items => {
+                if (!items.length) return 0;
+                const values = items.map(r => r.directionAdjusted || 0).sort((x,y) => x-y);
+                const m = Math.floor(values.length / 2);
+                return values.length % 2 ? values[m] : (values[m-1] + values[m]) / 2;
+            };
+            const fmt = v => Number.isFinite(v) ? `${v >= 0 ? '+' : ''}${v.toFixed(2)}%` : '—';
+            const fmtRatio = v => Number.isFinite(v) && v > 0 ? `${v.toFixed(2)}x` : '—';
+            const fmtBody = v => Number.isFinite(v) ? `${(v * 100).toFixed(0)}%` : '—';
+            const grouped = [...new Set(rows.map(r => r.label))].map(label => {
+                const items = completed.filter(r => r.label === label);
+                const sample = rows.filter(r => r.label === label).length;
+                return {label, sample, completed: items.length, win: winRate(items), avg: avg(items), median: median(items)};
+            }).sort((x,y) => y.completed - x.completed || x.label.localeCompare(y.label));
+            const panelClass = theme === 'dark' ? 'border-zinc-900 bg-zinc-950/70 text-zinc-300' : 'border-zinc-200 bg-white text-zinc-700';
+            const mutedClass = theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500';
+            const rowClass = theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200';
+            const detailRows = [...completed].reverse();
+            const testPassed = CANDLE_PATTERN_TEST_RESULTS.filter(t => t.passed).length;
+
+            return (
+                <div class={`mx-6 mb-4 p-4 border rounded-sm font-mono ${panelClass}`}>
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                        <div class={`text-[10px] font-bold tracking-wider ${mutedClass}`}>PATTERN LAB // HISTORICAL EVENT STUDY</div>
+                        <div class={`text-[9px] ${mutedClass}`}>Detector tests: <strong class={testPassed === CANDLE_PATTERN_TEST_RESULTS.length ? 'text-[#00FF66]' : 'text-red-500'}>{testPassed}/{CANDLE_PATTERN_TEST_RESULTS.length}</strong></div>
+                    </div>
+
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-[10px] mb-4">
+                        <div class={`border p-2 ${rowClass}`}>SIGNALS <strong>{rows.length}</strong></div>
+                        <div class={`border p-2 ${rowClass}`}>COMPLETED <strong>{completed.length}</strong></div>
+                        <div class={`border p-2 ${rowClass}`}>BULLISH <strong class="text-[#00FF66]">{completed.filter(r => r.type === 'BULLISH').length}</strong></div>
+                        <div class={`border p-2 ${rowClass}`}>BEARISH <strong class="text-red-500">{completed.filter(r => r.type === 'BEARISH').length}</strong></div>
+                        <div class={`border p-2 ${rowClass}`}>5-BAR AVG <strong>{fmt(avg(completed))}</strong></div>
+                    </div>
+
+                    <div class={`text-[9px] uppercase tracking-wider mb-2 ${mutedClass}`}>Pattern results</div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-[9px] min-w-[620px]">
+                            <thead><tr class={`border-b ${rowClass} ${mutedClass}`}>
+                                <th class="text-left py-2 pr-3">PATTERN</th><th class="text-right py-2 px-2">N</th>
+                                <th class="text-right py-2 px-2">5-BAR WIN</th><th class="text-right py-2 px-2">AVG 5-BAR</th>
+                                <th class="text-right py-2 px-2">MEDIAN</th>
+                            </tr></thead>
+                            <tbody>
+                                {grouped.length ? grouped.map(item => (
+                                    <tr key={item.label} class={`border-b ${rowClass}`}>
+                                        <td class="py-2 pr-3 font-bold">{item.label}</td>
+                                        <td class="text-right px-2">{item.completed}{item.sample > item.completed ? ` + ${item.sample-item.completed} open` : ''}</td>
+                                        <td class="text-right px-2">{item.completed ? `${item.win.toFixed(1)}%` : '—'}</td>
+                                        <td class={`text-right px-2 ${item.avg > 0 ? 'text-[#00FF66]' : item.avg < 0 ? 'text-red-500' : ''}`}>{fmt(item.avg)}</td>
+                                        <td class="text-right px-2">{fmt(item.median)}</td>
+                                    </tr>
+                                )) : <tr><td colSpan="5" class={`py-3 italic ${mutedClass}`}>No candlestick patterns detected in the current dataset.</td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class={`mt-5 pt-4 border-t ${rowClass}`}>
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <div class={`text-[9px] uppercase tracking-wider ${mutedClass}`}>Individual occurrences</div>
+                            <div class={`text-[8px] ${mutedClass}`}>Most recent first · completed 5-candle observations only</div>
+                        </div>
+                        <div class="overflow-x-auto max-h-72 overflow-y-auto">
+                            <table class="w-full text-[9px] min-w-[1100px]">
+                                <thead class={theme === 'dark' ? 'bg-zinc-950' : 'bg-white'}>
+                                    <tr class={`border-b ${rowClass} ${mutedClass}`}>
+                                        <th class="text-left py-2 pr-3 sticky top-0">PATTERN</th>
+                                        <th class="text-left py-2 px-2 sticky top-0">TIME</th>
+                                        <th class="text-right py-2 px-2 sticky top-0">ENTRY</th>
+                                        <th class="text-right py-2 px-2 sticky top-0">TREND</th>
+                                        <th class="text-right py-2 px-2 sticky top-0">BODY</th>
+                                        <th class="text-right py-2 px-2 sticky top-0">VOL</th>
+                                        <th class="text-right py-2 px-2 sticky top-0">+1 BAR</th>
+                                        <th class="text-right py-2 px-2 sticky top-0">+3 BAR</th>
+                                        <th class="text-right py-2 px-2 sticky top-0">+5 BAR</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {detailRows.length ? detailRows.map((r,i) => {
+                                        const one = r.returns?.[1];
+                                        const three = r.returns?.[3];
+                                        const five = r.returns?.[5];
+                                        const adjusted = v => r.type === 'BEARISH' && Number.isFinite(v) ? -v : v;
+                                        const returnClass = v => adjusted(v) > 0 ? 'text-[#00FF66]' : adjusted(v) < 0 ? 'text-red-500' : '';
+                                        const context = r.context || {};
+                                        return (
+                                            <tr key={`${r.label}-${r.endIndex}-${i}`} class={`border-b ${rowClass}`}>
+                                                <td class="py-2 pr-3 font-bold">
+                                                    <span class={r.type === 'BULLISH' ? 'text-[#00FF66]' : 'text-red-500'}>{r.label}</span>
+                                                </td>
+                                                <td class="px-2">{r.time}</td>
+                                                <td class="text-right px-2">${Number(r.entry).toFixed(2)}</td>
+                                                <td class="text-right px-2">{context.priorTrend || '—'}</td>
+                                                <td class="text-right px-2">{fmtBody(context.bodyPct)}</td>
+                                                <td class="text-right px-2">{fmtRatio(r.volumeRatio)}</td>
+                                                <td class={`text-right px-2 ${returnClass(one)}`}>{fmt(adjusted(one))}</td>
+                                                <td class={`text-right px-2 ${returnClass(three)}`}>{fmt(adjusted(three))}</td>
+                                                <td class={`text-right px-2 font-bold ${returnClass(five)}`}>{fmt(adjusted(five))}</td>
+                                            </tr>
+                                        );
+                                    }) : <tr><td colSpan="9" class={`py-3 italic ${mutedClass}`}>No completed pattern occurrences in the current dataset.</td></tr>}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class={`mt-4 text-[9px] leading-relaxed ${mutedClass}`}>
+                        <strong>Method:</strong> reversal patterns require a prior 3-candle trend measured before the signal candle. Hammer/shooting-star geometry uses a maximum 35% body/range, a shadow at least 2× the body and the opposite shadow at most 35% of the body.
+                        Engulfing patterns use real-body containment. Marubozu requires at least 90% body/range, shadows ≤5% of range and body ≥0.6× prior ATR. Multi-candle patterns use prior-trend confirmation, normalized candle geometry and relative highs/lows. Volume is contextual only: current volume / prior 14-candle average; ≥1.10× is labeled volume support.
+                        Forward returns are measured from the pattern close at +1, +3 and +5 candles. These are historical observations, not forecasts.
+                    </div>
+
+                    {open.length > 0 && <div class={`mt-3 pt-3 border-t ${rowClass}`}>
+                        <div class={`text-[9px] uppercase tracking-wider mb-2 ${mutedClass}`}>Current / incomplete signals</div>
+                        <div class="flex flex-wrap gap-2">
+                            {open.map((r,i) => <div key={`${r.label}-${r.endIndex}-${i}`} class={`px-2 py-1 border rounded-sm text-[9px] ${rowClass}`}>
+                                <span class={r.type === 'BULLISH' ? 'text-[#00FF66]' : 'text-red-500'}>{r.type}</span>
+                                <span class="mx-1">·</span>{r.label}<span class={`ml-1 ${mutedClass}`}>@ {r.time}</span>
+                            </div>)}
+                        </div>
+                    </div>}
+                </div>
+            );
+        }
+
+        const appRoot = ReactDOM.createRoot(document.getElementById('root'));
+        appRoot.render(<Dashboard />);
+    </script>
+</body>
+</html>                        if (!cancelled && asset) {
+                            setSuggestions(prev => [asset, ...prev.filter(item => item.ticker !== asset.ticker)].slice(0, 8));
+                            setResolvedSymbols(prev => ({
+                                ...prev,
+                                [asset.ticker]: { name: asset.name, exchange: asset.exchange || 'US', currency: asset.currency || 'USD' }
+                            }));
                         }
                         return;
                     }
