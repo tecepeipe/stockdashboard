@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="1.1.3">
+    <meta name="version" content="1.1.4">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -1169,97 +1169,19 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             };
 
 
-            // Provider market-data loader. The existing provider implementations are
-            // kept intact here so this refactor changes orchestration without changing
-            // provider behaviour.
-            const loadProviderMarketData = async ({
-                activeProvider,
+            // Alpaca adapter: provider-specific fetching and normalization are isolated here.
+            const loadAlpacaMarketData = async ({
                 watchlist,
-                timeframe,
                 selectedTimeframeConfig,
-                selectedInterval,
+                timeframe,
                 activeStock,
                 alpacaKeyId,
                 alpacaSecretKey,
-                apiKey,
                 setRenderedChartData,
                 writeTimeframeCache,
                 getTimeframeBars,
-                calculateTechnicalIndicators,
-                fetchAlphaVantageJson,
-                createMarketData
+                calculateTechnicalIndicators
             }) => {
-                await loadProviderMarketData({
-                    activeProvider,
-                    watchlist,
-                    timeframe,
-                    selectedTimeframeConfig,
-                    selectedInterval,
-                    activeStock,
-                    alpacaKeyId,
-                    alpacaSecretKey,
-                    apiKey,
-                    setRenderedChartData,
-                    writeTimeframeCache,
-                    getTimeframeBars,
-                    calculateTechnicalIndicators,
-                    fetchAlphaVantageJson,
-                    createMarketData
-                });
-
-
-            };
-
-            const fetchPipelineData = React.useCallback(async (forceRefresh = false) => {
-                setSyncProgress(10);
-                setSyncStatusText('SCANNING CHANNELS...');
-                
-                const selectedTimeframeConfig = timeframeConfig[timeframe] || timeframeConfig['1D'];
-                const selectedInterval = selectedTimeframeConfig.tdInterval;
-                const localPrices = { ...stockPrices };
-
-                let allCached = true;
-                if (!forceRefresh) {
-                    for (const ticker of watchlist) {
-                        const cached = readTimeframeCache(hasLiveCredentials ? activeProvider : 'FAKE', ticker, timeframe);
-                        if (!cached) { allCached = false; break; }
-                    }
-                } else {
-                    allCached = false;
-                }
-
-
-                if (!hasLiveCredentials) {
-                    for (let ticker of watchlist) {
-                        const cacheKey = getCacheKey('FAKE', ticker, timeframe);
-                        const marketData = createMarketData(ticker, generateForcedFakeData(ticker, timeframe), 'FAKE');
-                        const processedData = marketData.bars;
-                        writeTimeframeCache('FAKE', ticker, timeframe, processedData);
-                        
-                        const currentCandle = processedData[processedData.length - 1];
-                        const staticMeta = TICKER_DICTIONARY.find(i => i.ticker === ticker) || { cap: '150B', pe: '22.0' };
-                        
-                        localPrices[ticker] = {
-                            price: currentCandle.close,
-                            change: ((currentCandle.close - processedData[0].close) / processedData[0].close) * 100,
-                            volume: '1.2M',
-                            cap: staticMeta.cap,
-                            pe: staticMeta.pe
-                        };
-                        if (ticker === activeStock) setRenderedChartData(processedData);
-                    }
-                    setStockPrices(localPrices);
-                    setSyncProgress(100);
-                    setSyncStatusText('SIMULATION MODE BUFFERED');
-                    return;
-                }
-
-                // Alpaca OHLC bars must be refreshed independently of cached quote snapshots.
-                // The quote pane can update while the historical candlestick dataset remains stale.
-                if (!allCached || forceRefresh) {
-                    try {
-                        setSyncProgress(30);
-                        if (activeProvider === 'ALPACA') {
                             for (let ticker of watchlist) {
                                 const alpacaTimeframe = selectedTimeframeConfig.alpacaInterval;
                                 const alpacaLimit = selectedTimeframeConfig.outputsize;
@@ -1328,6 +1250,71 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                     console.warn(`Alpaca returned no OHLC bars for ${ticker}`, alpacaJson);
                                 }
                             }
+
+            };
+
+            const fetchPipelineData = React.useCallback(async (forceRefresh = false) => {
+                setSyncProgress(10);
+                setSyncStatusText('SCANNING CHANNELS...');
+                
+                const selectedTimeframeConfig = timeframeConfig[timeframe] || timeframeConfig['1D'];
+                const selectedInterval = selectedTimeframeConfig.tdInterval;
+                const localPrices = { ...stockPrices };
+
+                let allCached = true;
+                if (!forceRefresh) {
+                    for (const ticker of watchlist) {
+                        const cached = readTimeframeCache(hasLiveCredentials ? activeProvider : 'FAKE', ticker, timeframe);
+                        if (!cached) { allCached = false; break; }
+                    }
+                } else {
+                    allCached = false;
+                }
+
+
+                if (!hasLiveCredentials) {
+                    for (let ticker of watchlist) {
+                        const cacheKey = getCacheKey('FAKE', ticker, timeframe);
+                        const marketData = createMarketData(ticker, generateForcedFakeData(ticker, timeframe), 'FAKE');
+                        const processedData = marketData.bars;
+                        writeTimeframeCache('FAKE', ticker, timeframe, processedData);
+                        
+                        const currentCandle = processedData[processedData.length - 1];
+                        const staticMeta = TICKER_DICTIONARY.find(i => i.ticker === ticker) || { cap: '150B', pe: '22.0' };
+                        
+                        localPrices[ticker] = {
+                            price: currentCandle.close,
+                            change: ((currentCandle.close - processedData[0].close) / processedData[0].close) * 100,
+                            volume: '1.2M',
+                            cap: staticMeta.cap,
+                            pe: staticMeta.pe
+                        };
+                        if (ticker === activeStock) setRenderedChartData(processedData);
+                    }
+                    setStockPrices(localPrices);
+                    setSyncProgress(100);
+                    setSyncStatusText('SIMULATION MODE BUFFERED');
+                    return;
+                }
+
+                // Alpaca OHLC bars must be refreshed independently of cached quote snapshots.
+                // The quote pane can update while the historical candlestick dataset remains stale.
+                if (!allCached || forceRefresh) {
+                    try {
+                        setSyncProgress(30);
+                        if (activeProvider === 'ALPACA') {
+                            await loadAlpacaMarketData({
+                                watchlist,
+                                selectedTimeframeConfig,
+                                timeframe,
+                                activeStock,
+                                alpacaKeyId,
+                                alpacaSecretKey,
+                                setRenderedChartData,
+                                writeTimeframeCache,
+                                getTimeframeBars,
+                                calculateTechnicalIndicators
+                            });
                         } else if (activeProvider === 'ALPHAVANTAGE') {
                             for (let ticker of watchlist) {
                                 const chartPointLimit = selectedTimeframeConfig.maxCandles;
