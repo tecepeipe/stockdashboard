@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="1.7.0">
+    <meta name="version" content="1.8.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -53,6 +53,32 @@
     <div id="root"></div>
 
     <script type="text/babel">
+
+        // Shared persistent-state helper keeps localStorage-backed Dashboard state consistent.
+        const useStoredState = (key, initialValue, options = {}) => {
+            const { json = false } = options;
+            const [value, setValue] = React.useState(() => {
+                try {
+                    const saved = Storage.get(key);
+                    if (saved === null || saved === undefined) {
+                        return typeof initialValue === 'function' ? initialValue() : initialValue;
+                    }
+                    return json ? JSON.parse(saved) : saved;
+                } catch (e) {
+                    return typeof initialValue === 'function' ? initialValue() : initialValue;
+                }
+            });
+
+            React.useEffect(() => {
+                if (json) {
+                    Storage.setJSON(key, value);
+                } else {
+                    Storage.set(key, value);
+                }
+            }, [key, value, json]);
+
+            return [value, setValue];
+        };
 
         // Shared numeric/formatting helpers keep display rules and calculations consistent.
         const formatFixed = (value, decimals = 2, fallback = '—') => {
@@ -1088,8 +1114,8 @@ const uiTranslations = {
         };
 
 function Dashboard() {
-            const [theme, setTheme] = React.useState(() => Storage.get(STORAGE_KEYS.THEME) || 'dark');
-            const [language, setLanguage] = React.useState(() => Storage.get(STORAGE_KEYS.LANGUAGE) || 'en');
+            const [theme, setTheme] = useStoredState(STORAGE_KEYS.THEME, 'dark');
+            const [language, setLanguage] = useStoredState(STORAGE_KEYS.LANGUAGE, 'en');
             const languageOptions = [
                 { code: 'pt-BR', label: 'PT-BR', key: 'pt' },
                 { code: 'en', label: 'EN', key: 'en' },
@@ -1102,16 +1128,17 @@ function Dashboard() {
                 const timer = setTimeout(() => translateStaticText(language), 0);
                 return () => clearTimeout(timer);
             }, [language]);
-            const [watchlist, setWatchlist] = React.useState(() => {
-                const saved = Storage.get(STORAGE_KEYS.WATCHLIST);
-                return saved ? JSON.parse(saved) : ['AAPL', 'MSFT', 'TSLA', 'NVDA'];
-            });
+            const [watchlist, setWatchlist] = useStoredState(
+                STORAGE_KEYS.WATCHLIST,
+                ['AAPL', 'MSFT', 'TSLA', 'NVDA'],
+                { json: true }
+            );
             const [activeStock, setActiveStock] = React.useState('AAPL');
             const [timeframe, setTimeframe] = React.useState('1D');
-            const [apiKey, setApiKey] = React.useState(() => Storage.get(STORAGE_KEYS.TWELVE_DATA_KEY) || '');
-            const [alpacaKeyId, setAlpacaKeyId] = React.useState(() => Storage.get(STORAGE_KEYS.ALPACA_KEY_ID) || '');
-            const [alpacaSecretKey, setAlpacaSecretKey] = React.useState(() => Storage.get(STORAGE_KEYS.ALPACA_SECRET_KEY) || '');
-            const [alphaVantageKey, setAlphaVantageKey] = React.useState(() => Storage.get(STORAGE_KEYS.ALPHA_VANTAGE_KEY) || '');
+            const [apiKey, setApiKey] = useStoredState(STORAGE_KEYS.TWELVE_DATA_KEY, '');
+            const [alpacaKeyId, setAlpacaKeyId] = useStoredState(STORAGE_KEYS.ALPACA_KEY_ID, '');
+            const [alpacaSecretKey, setAlpacaSecretKey] = useStoredState(STORAGE_KEYS.ALPACA_SECRET_KEY, '');
+            const [alphaVantageKey, setAlphaVantageKey] = useStoredState(STORAGE_KEYS.ALPHA_VANTAGE_KEY, '');
             const activeProvider = alpacaKeyId && alpacaSecretKey ? 'ALPACA' : alphaVantageKey ? 'ALPHAVANTAGE' : apiKey ? 'TWELVEDATA' : 'DEMO';
             const hasLiveCredentials = activeProvider !== 'DEMO';
             const [showApiInput, setShowApiInput] = React.useState(false);
@@ -1186,7 +1213,6 @@ function Dashboard() {
             }, []);
 
             React.useEffect(() => {
-                Storage.set(STORAGE_KEYS.THEME, theme);
                 document.body.style.backgroundColor = theme === 'dark' ? '#050505' : '#f0f2f5';
                 if (theme === 'light') {
                     document.body.classList.add('light-theme');
@@ -1194,10 +1220,6 @@ function Dashboard() {
                     document.body.classList.remove('light-theme');
                 }
             }, [theme]);
-
-            React.useEffect(() => {
-                Storage.setJSON(STORAGE_KEYS.WATCHLIST, watchlist);
-            }, [watchlist]);
 
             React.useEffect(() => {
                 const compact = {};
