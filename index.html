@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="1.6.0">
+    <meta name="version" content="1.7.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -1025,21 +1025,22 @@ const analyzePatternLab = data => {
         // Backward-compatible names retained for existing UI call sites.
         const getPatternStatistics = data => analyzePatternLab(data);
         const getPatternStatisticsSafe = data => analyzePatternLab(data);
-        function Dashboard() {
-            const [theme, setTheme] = React.useState(() => Storage.get(STORAGE_KEYS.THEME) || 'dark');
-            const [language, setLanguage] = React.useState(() => Storage.get(STORAGE_KEYS.LANGUAGE) || 'en');
-            const languageOptions = [
+                // Centralised translation catalogue and DOM translation helper.
+        // UI text translations stay outside Dashboard so language handling has one source of truth.
+const uiTranslations = {
+    'TRADING TERMINAL // NASDAQ': { pt: 'TERMINAL DE TRADING // NASDAQ', en: 'TRADING TERMINAL // NASDAQ', es: 'TERMINAL DE TRADING // NASDAQ', fr: 'TERMINAL DE TRADING // NASDAQ' },
+    'Stock Dashboard //': { pt: 'Painel de Ações //', en: 'Stock Dashboard //', es: 'Panel de Acciones //', fr: 'Tableau des Actions //'            const languageOptions = [
                 { code: 'pt-BR', label: 'PT-BR', key: 'pt' },
                 { code: 'en', label: 'EN', key: 'en' },
                 { code: 'es', label: 'ES', key: 'es' },
                 { code: 'fr', label: 'FR', key: 'fr' }
             ];
-            const uiTranslations = {
-                'TRADING TERMINAL // NASDAQ': { pt: 'TERMINAL DE TRADING // NASDAQ', en: 'TRADING TERMINAL // NASDAQ', es: 'TERMINAL DE TRADING // NASDAQ', fr: 'TERMINAL DE TRADING // NASDAQ' },
-                'Stock Dashboard //': { pt: 'Painel de Ações //', en: 'Stock Dashboard //', es: 'Panel de Acciones //', fr: 'Tableau des Actions //' },
-                'DataStream': { pt: 'Fluxo de Dados', en: 'DataStream', es: 'Flujo de Datos', fr: 'Flux de Données' },
-                'CLEAR API': { pt: 'LIMPAR API', en: 'CLEAR API', es: 'LIMPIAR API', fr: 'EFFACER API' },
-                'DATA PROVIDER': { pt: 'PROVEDOR DE DADOS', en: 'DATA PROVIDER', es: 'PROVEEDOR DE DATOS', fr: 'FOURNISSEUR DE DONNÉES' },
+            React.useEffect(() => {
+                Storage.set(STORAGE_KEYS.LANGUAGE, language);
+                document.documentElement.lang = language;
+                const timer = setTimeout(() => translateStaticText(language), 0);
+                return () => clearTimeout(timer);
+            }, [language]);DER': { pt: 'PROVEDOR DE DADOS', en: 'DATA PROVIDER', es: 'PROVEEDOR DE DATOS', fr: 'FOURNISSEUR DE DONNÉES' },
                 'Market Data Provider': { pt: 'Provedor de Dados de Mercado', en: 'Market Data Provider', es: 'Proveedor de Datos de Mercado', fr: 'Fournisseur de Données de Marché' },
                 'ALPACA KEY ID': { pt: 'ALPACA ID DA CHAVE', en: 'ALPACA KEY ID', es: 'ID DE CLAVE ALPACA', fr: 'ID DE CLÉ ALPACA' },
                 'ALPACA SECRET KEY': { pt: 'ALPACA CHAVE SECRETA', en: 'ALPACA SECRET KEY', es: 'CLAVE SECRETA ALPACA', fr: 'CLÉ SECRÈTE ALPACA' },
