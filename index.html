@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="1.9.1">
+    <meta name="version" content="1.9.2">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -1635,7 +1635,8 @@ function Dashboard() {
 
                 // Alpaca OHLC bars must be refreshed independently of cached quote snapshots.
                 // The quote pane can update while the historical candlestick dataset remains stale.
-                if (!allCached || forceRefresh) {
+                const needsActiveQuote = !quoteInfo[activeStock];
+                if (!allCached || forceRefresh || needsActiveQuote) {
                     try {
                         setSyncProgress(30);
                         if (activeProvider === 'ALPACA') {
@@ -1927,7 +1928,7 @@ function Dashboard() {
                 setStockPrices(localPrices);
                 setSyncProgress(100);
                 if (hasLiveCredentials) setSyncStatusText(`${activeProvider} LIVE VECTOR FEED ACTIVE`);
-            }, [watchlist, timeframe, apiKey, alphaVantageKey, alpacaKeyId, alpacaSecretKey, activeProvider, hasLiveCredentials, activeStock, fundamentals]);
+            }, [watchlist, timeframe, apiKey, alphaVantageKey, alpacaKeyId, alpacaSecretKey, activeProvider, hasLiveCredentials, activeStock, fundamentals, quoteInfo]);
 
             React.useEffect(() => {
                 fetchPipelineData();
