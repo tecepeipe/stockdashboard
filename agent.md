@@ -6,8 +6,6 @@ Maintain `tecepeipe/stockdashboard` as a reliable, understandable static stock-m
 
 The project is intentionally a **single-file HTML application**. Prioritise correctness, resilience, maintainability and preservation of the existing UX over architectural complexity.
 
-**Current version: 1.10.0**
-
 ## Repository
 
 - Repository: `tecepeipe/stockdashboard`
