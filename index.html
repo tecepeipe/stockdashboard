@@ -881,6 +881,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             const [searchQuery, setSearchQuery] = React.useState('');
             const [suggestions, setSuggestions] = React.useState([]);
             const liveSearchRequestRef = React.useRef(0);
+            const alpacaAssetsCacheRef = React.useRef({ key: '', assets: null, loading: null });
             const [resolvedSymbols, setResolvedSymbols] = React.useState({});
             const [financialView, setFinancialView] = React.useState('annual');
             const [syncProgress, setSyncProgress] = React.useState(100);
@@ -1550,10 +1551,42 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                         }));
                     }
                     if (activeProvider === 'ALPACA') {
-                        const headers = {'APCA-API-KEY-ID': alpacaKeyId, 'APCA-API-SECRET-KEY': alpacaSecretKey, 'Accept': 'application/json'};
-                        const listRes = await fetch('https://paper-api.alpaca.markets/v2/assets?status=active&asset_class=us_equity', {headers, cache:'no-store'});
-                        if (!listRes.ok) return [];
-                        const assets = await listRes.json();
+                        const cacheKey = alpacaKeyId + ':' + alpacaSecretKey;
+                        const headers = {
+                            'APCA-API-KEY-ID': alpacaKeyId,
+                            'APCA-API-SECRET-KEY': alpacaSecretKey,
+                            'Accept': 'application/json'
+                        };
+                        let assets = alpacaAssetsCacheRef.current.key === cacheKey ? alpacaAssetsCacheRef.current.assets : null;
+
+                        if (!Array.isArray(assets)) {
+                            if (alpacaAssetsCacheRef.current.key !== cacheKey) {
+                                alpacaAssetsCacheRef.current = { key: cacheKey, assets: null, loading: null };
+                            }
+                            if (!alpacaAssetsCacheRef.current.loading) {
+                                alpacaAssetsCacheRef.current.loading = fetch(
+                                    'https://paper-api.alpaca.markets/v2/assets?status=active&asset_class=us_equity',
+                                    { headers, cache: 'no-store' }
+                                ).then(async res => {
+                                    if (!res.ok) {
+                                        const body = await res.text().catch(() => '');
+                                        throw new Error('Alpaca assets search HTTP ' + res.status + (body ? ': ' + body.slice(0, 160) : ''));
+                                    }
+                                    const json = await res.json();
+                                    if (!Array.isArray(json)) throw new Error('Alpaca assets response was not an array');
+                                    alpacaAssetsCacheRef.current.assets = json;
+                                    return json;
+                                }).catch(err => {
+                                    alpacaAssetsCacheRef.current.assets = null;
+                                    console.warn('[SYMBOL SEARCH] ALPACA', err);
+                                    return [];
+                                }).finally(() => {
+                                    alpacaAssetsCacheRef.current.loading = null;
+                                });
+                            }
+                            assets = await alpacaAssetsCacheRef.current.loading;
+                        }
+
                         if (requestId !== liveSearchRequestRef.current || !Array.isArray(assets)) return [];
                         const q = query.toLowerCase();
                         return assets.filter(item =>
@@ -1565,7 +1598,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                             ticker: item.symbol,
                             name: item.name,
                             exchange: item.exchange,
-                            currency: item.currency,
+                            currency: item.currency || 'USD',
                             source: 'ALPACA'
                         }));
                     }
