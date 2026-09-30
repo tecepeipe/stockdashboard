@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="1.0.6">
+    <meta name="version" content="1.0.7">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -1583,11 +1583,25 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             React.useEffect(() => {
                 const query = searchQuery.trim();
                 if (!query) { setSuggestions([]); return; }
-
                 const localMatches = TICKER_DICTIONARY.filter(item =>
                     item.ticker.toLowerCase().includes(query.toLowerCase()) ||
                     item.name.toLowerCase().includes(query.toLowerCase())
                 ).map(item => ({...item, source:'DICTIONARY', currency:item.currency || 'USD'}));
+
+                // Alpaca Market Data does not expose a symbol-search endpoint for this
+                // browser-only app. A missing IEX bar is not proof that a symbol is invalid.
+                if (activeProvider === 'ALPACA' && /^[A-Z0-9._-]{1,20}$/i.test(query)) {
+                    const upperQuery = query.toUpperCase();
+                    if (!localMatches.some(item => item.ticker.toUpperCase() === upperQuery)) {
+                        localMatches.push({
+                            ticker: upperQuery,
+                            name: upperQuery,
+                            exchange: 'US',
+                            currency: 'USD',
+                            source: 'ALPACA'
+                        });
+                    }
+                }
 
                 setSuggestions(localMatches.slice(0,8));
                 if (!hasLiveCredentials || query.length < 2) return;
@@ -1625,70 +1639,42 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 ? liveFinancials[activeStock]
                 : showFinancials ? generateFinancials(activeStock, activeLiveCap) : { annual: { performance: [], earnings: [] }, quarter: { performance: [], earnings: [] } };
 
-            const handleSearchKeyDown = async (e) => {
-                                        if (e.key !== 'Enter') return;
-                                        e.preventDefault();
-                                        const query = searchQuery.trim();
-                                        if (!query) return;
-
-                                        const upper = query.toUpperCase();
-                                        const exactLocal = TICKER_DICTIONARY.find(s => s.ticker.toUpperCase() === upper);
-                                        const exactSuggestion = suggestions.find(s => s.ticker?.toUpperCase() === upper);
-
-                                        if (exactSuggestion) {
-                                            addSearchSymbol(exactSuggestion);
-                                            return;
-                                        }
-
-                                        if (exactLocal && !hasLiveCredentials) {
-                                            addSearchSymbol({...exactLocal, source: 'DICTIONARY', currency: exactLocal.currency || 'USD'});
-                                            return;
-                                        }
-
-                                        if (hasLiveCredentials) {
-                                            const matches = await searchLiveSymbols(query);
-                                            if (matches.length) {
-                                                addSearchSymbol(matches[0]);
-                                                return;
-                                            }
-
-                                            if (activeProvider === 'ALPACA' && /^[A-Z0-9._-]{1,20}$/.test(upper)) {
-                                                try {
-                                                    const validationUrl = 'https://data.alpaca.markets/v2/stocks/' +
-                                                        encodeURIComponent(upper) +
-                                                        '/bars?timeframe=1Day&limit=1&sort=desc&feed=iex&adjustment=all';
-                                                    const res = await fetch(validationUrl, {
-                                                        headers: {
-                                                            'APCA-API-KEY-ID': alpacaKeyId,
-                                                            'APCA-API-SECRET-KEY': alpacaSecretKey,
-                                                            'Accept': 'application/json'
-                                                        },
-                                                        cache: 'no-store'
-                                                    });
-                                                    const json = await res.json();
-                                                    if (res.ok && Array.isArray(json.bars) && json.bars.length > 0) {
-                                                        addSearchSymbol({
-                                                            ticker: upper,
-                                                            name: upper,
-                                                            exchange: 'US',
-                                                            currency: 'USD',
-                                                            source: 'ALPACA'
-                                                        });
-                                                        return;
-                                                    }
-                                                } catch (err) {
-                                                    console.warn('[SYMBOL ENTER] ALPACA market-data validation', err);
-                                                }
-                                            }
-
-                                            return;
-                                        }
-
-                                        if (exactLocal) {
-                                            addSearchSymbol({...exactLocal, source: 'DICTIONARY', currency: exactLocal.currency || 'USD'});
-                                        }
-                                    };
+            const handleSearchKeyDown = async (e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                const query = searchQuery.trim();
+                if (!query) return;
 
+                const upper = query.toUpperCase();
+                const exactLocal = TICKER_DICTIONARY.find(s => s.ticker.toUpperCase() === upper);
+                const exactSuggestion = suggestions.find(s => s.ticker?.toUpperCase() === upper);
+
+                if (exactSuggestion) {
+                    addSearchSymbol(exactSuggestion);
+                    return;
+                }
+
+                if (hasLiveCredentials) {
+                    if (activeProvider === 'ALPACA' && /^[A-Z0-9._-]{1,20}$/.test(upper)) {
+                        addSearchSymbol({
+                            ticker: upper,
+                            name: upper,
+                            exchange: 'US',
+                            currency: 'USD',
+                            source: 'ALPACA'
+                        });
+                        return;
+                    }
+
+                    const matches = await searchLiveSymbols(query);
+                    if (matches.length) addSearchSymbol(matches[0]);
+                    return;
+                }
+
+                if (exactLocal) {
+                    addSearchSymbol({...exactLocal, source: 'DICTIONARY', currency: exactLocal.currency || 'USD'});
+                }
+            };
             return (
                 <div class={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${theme === 'dark' ? 'bg-[#050505] text-zinc-400' : 'bg-[#f0f2f5] text-zinc-600'}`}>
                     
