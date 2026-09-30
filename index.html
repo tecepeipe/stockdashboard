@@ -1551,55 +1551,9 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                         }));
                     }
                     if (activeProvider === 'ALPACA') {
-                        const cacheKey = alpacaKeyId + ':' + alpacaSecretKey;
-                        const headers = {
-                            'APCA-API-KEY-ID': alpacaKeyId,
-                            'APCA-API-SECRET-KEY': alpacaSecretKey,
-                            'Accept': 'application/json'
-                        };
-                        let assets = alpacaAssetsCacheRef.current.key === cacheKey ? alpacaAssetsCacheRef.current.assets : null;
-
-                        if (!Array.isArray(assets)) {
-                            if (alpacaAssetsCacheRef.current.key !== cacheKey) {
-                                alpacaAssetsCacheRef.current = { key: cacheKey, assets: null, loading: null };
-                            }
-                            if (!alpacaAssetsCacheRef.current.loading) {
-                                alpacaAssetsCacheRef.current.loading = (async () => {
-                                    for (const base of ['https://paper-api.alpaca.markets', 'https://api.alpaca.markets']) {
-                                        try {
-                                            const res = await fetch(base + '/v2/assets?status=active&asset_class=us_equity', { headers, cache: 'no-store' });
-                                            if (!res.ok) continue;
-                                            const json = await res.json();
-                                            if (Array.isArray(json)) {
-                                                alpacaAssetsCacheRef.current.assets = json;
-                                                return json;
-                                            }
-                                        } catch (err) {
-                                            console.warn('[SYMBOL SEARCH] ALPACA endpoint failed', base, err);
-                                        }
-                                    }
-                                    return [];
-                                })().finally(() => {
-                                    alpacaAssetsCacheRef.current.loading = null;
-                                });
-                            }
-                            assets = await alpacaAssetsCacheRef.current.loading;
-                        }
-
-                        if (requestId !== liveSearchRequestRef.current || !Array.isArray(assets)) return [];
-                        const q = query.toLowerCase();
-                        return assets.filter(item =>
-                            item.status === 'active' &&
-                            item.asset_class === 'us_equity' &&
-                            ['NASDAQ', 'NYSE'].includes(item.exchange) &&
-                            (String(item.symbol || '').toLowerCase().includes(q) || String(item.name || '').toLowerCase().includes(q))
-                        ).slice(0, 8).map(item => ({
-                            ticker: item.symbol,
-                            name: item.name,
-                            exchange: item.exchange,
-                            currency: item.currency || 'USD',
-                            source: 'ALPACA'
-                        }));
+                        // Alpaca /v2/assets is a Trading API endpoint. Use Market Data API
+                        // for exact-symbol validation in this static browser application.
+                        return [];
                     }
                 } catch(err) { console.warn('[SYMBOL SEARCH]',activeProvider,err); }
                 return [];
@@ -1816,37 +1770,34 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
                                             if (activeProvider === 'ALPACA' && /^[A-Z0-9._-]{1,20}$/.test(upper)) {
                                                 try {
-                                                    const headers = {
-                                                        'APCA-API-KEY-ID': alpacaKeyId,
-                                                        'APCA-API-SECRET-KEY': alpacaSecretKey,
-                                                        'Accept': 'application/json'
-                                                    };
-                                                    for (const base of ['https://paper-api.alpaca.markets', 'https://api.alpaca.markets']) {
-                                                        try {
-                                                            const res = await fetch(base + '/v2/assets/' + encodeURIComponent(upper), { headers, cache: 'no-store' });
-                                                            if (!res.ok) continue;
-                                                            const asset = await res.json();
-                                                            if (asset.status === 'active' && asset.asset_class === 'us_equity') {
-                                                                addSearchSymbol({
-                                                                    ticker: asset.symbol,
-                                                                    name: asset.name,
-                                                                    exchange: asset.exchange,
-                                                                    currency: asset.currency || 'USD',
-                                                                    source: 'ALPACA'
-                                                                });
-                                                                return;
-                                                            }
-                                                        } catch (err) {
-                                                            console.warn('[SYMBOL ENTER] ALPACA endpoint failed', base, err);
-                                                        }
+                                                    const validationUrl = 'https://data.alpaca.markets/v2/stocks/' +
+                                                        encodeURIComponent(upper) +
+                                                        '/bars?timeframe=1Day&limit=1&sort=desc&feed=iex&adjustment=all';
+                                                    const res = await fetch(validationUrl, {
+                                                        headers: {
+                                                            'APCA-API-KEY-ID': alpacaKeyId,
+                                                            'APCA-API-SECRET-KEY': alpacaSecretKey,
+                                                            'Accept': 'application/json'
+                                                        },
+                                                        cache: 'no-store'
+                                                    });
+                                                    const json = await res.json();
+                                                    if (res.ok && Array.isArray(json.bars) && json.bars.length > 0) {
+                                                        addSearchSymbol({
+                                                            ticker: upper,
+                                                            name: upper,
+                                                            exchange: 'US',
+                                                            currency: 'USD',
+                                                            source: 'ALPACA'
+                                                        });
+                                                        return;
                                                     }
                                                 } catch (err) {
-                                                    console.warn('[SYMBOL ENTER] ALPACA', err);
+                                                    console.warn('[SYMBOL ENTER] ALPACA market-data validation', err);
                                                 }
                                             }
-                                        }
 
-                                        if (exactLocal) {
+                                                                                    if (exactLocal) {
                                             addSearchSymbol({...exactLocal, source: 'DICTIONARY', currency: exactLocal.currency || 'USD'});
                                         }
                                     }} placeholder="SCAN CORE EXCHANGE INDEX..." class={`w-full border rounded-md pl-10 pr-4 py-2 text-xs font-mono uppercase focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-white placeholder-zinc-600' : 'bg-white border-zinc-300 text-zinc-800 placeholder-zinc-400'}`} />
