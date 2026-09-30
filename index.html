@@ -1549,24 +1549,24 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                         }));
                     }
                     if (activeProvider === 'ALPACA') {
-                        const upper = query.toUpperCase();
                         const headers = {'APCA-API-KEY-ID': alpacaKeyId, 'APCA-API-SECRET-KEY': alpacaSecretKey, 'Accept': 'application/json'};
-                        const exactRes = await fetch('https://paper-api.alpaca.markets/v2/assets/' + encodeURIComponent(upper), {headers, cache:'no-store'});
-                        if (exactRes.ok) {
-                            const item = await exactRes.json();
-                            if (item.status === 'active' && item.asset_class === 'us_equity' && ['NASDAQ','NYSE'].includes(item.exchange)) {
-                                return [{ticker:item.symbol,name:item.name,exchange:item.exchange,currency:item.currency,source:'ALPACA'}];
-                            }
-                        }
                         const listRes = await fetch('https://paper-api.alpaca.markets/v2/assets?status=active&asset_class=us_equity', {headers, cache:'no-store'});
                         if (!listRes.ok) return [];
                         const assets = await listRes.json();
                         if (requestId !== liveSearchRequestRef.current || !Array.isArray(assets)) return [];
-                        const q=query.toLowerCase();
+                        const q = query.toLowerCase();
                         return assets.filter(item =>
-                            item.status==='active' && item.asset_class==='us_equity' && ['NASDAQ','NYSE'].includes(item.exchange) &&
-                            (String(item.symbol||'').toLowerCase().includes(q) || String(item.name||'').toLowerCase().includes(q))
-                        ).slice(0,8).map(item => ({ticker:item.symbol,name:item.name,exchange:item.exchange,currency:item.currency,source:'ALPACA'}));
+                            item.status === 'active' &&
+                            item.asset_class === 'us_equity' &&
+                            ['NASDAQ', 'NYSE'].includes(item.exchange) &&
+                            (String(item.symbol || '').toLowerCase().includes(q) || String(item.name || '').toLowerCase().includes(q))
+                        ).slice(0, 8).map(item => ({
+                            ticker: item.symbol,
+                            name: item.name,
+                            exchange: item.exchange,
+                            currency: item.currency,
+                            source: 'ALPACA'
+                        }));
                     }
                 } catch(err) { console.warn('[SYMBOL SEARCH]',activeProvider,err); }
                 return [];
