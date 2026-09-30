@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="1.1.1">
+    <meta name="version" content="1.1.2">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -183,6 +183,64 @@
               high2y: '49', low2y: '19', alert: '', cap: 'N/A', pe: 'N/A' }
         ];
 
+
+
+        // Centralised browser storage access.
+        // All application localStorage reads/writes go through this helper so
+        // storage keys and JSON handling remain consistent during the refactor.
+        const STORAGE_KEYS = Object.freeze({
+            THEME: 'matrix_theme',
+            LANGUAGE: 'matrix_language',
+            WATCHLIST: 'matrix_watchlist_v2',
+            TWELVE_DATA_KEY: 'matrix_twelvedata_key',
+            ALPACA_KEY_ID: 'matrix_alpaca_key_id',
+            ALPACA_SECRET_KEY: 'matrix_alpaca_secret_key',
+            ALPHA_VANTAGE_KEY: 'matrix_alphavantage_key',
+            PRICE_ALERTS: 'matrix_price_alerts'
+        });
+
+        const Storage = Object.freeze({
+            get(key, fallback = null) {
+                try {
+                    const value = localStorage.getItem(key);
+                    return value === null ? fallback : value;
+                } catch (error) {
+                    return fallback;
+                }
+            },
+            set(key, value) {
+                try {
+                    localStorage.setItem(key, String(value));
+                    return true;
+                } catch (error) {
+                    return false;
+                }
+            },
+            remove(key) {
+                try {
+                    localStorage.removeItem(key);
+                    return true;
+                } catch (error) {
+                    return false;
+                }
+            },
+            getJSON(key, fallback = null) {
+                const raw = this.get(key, null);
+                if (raw === null) return fallback;
+                try {
+                    return JSON.parse(raw);
+                } catch (error) {
+                    return fallback;
+                }
+            },
+            setJSON(key, value) {
+                try {
+                    return this.set(key, JSON.stringify(value));
+                } catch (error) {
+                    return false;
+                }
+            }
+        });
 
         const mockFinancialsData = {};
 
@@ -793,8 +851,8 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             });
         };
         function Dashboard() {
-            const [theme, setTheme] = React.useState(() => localStorage.getItem('matrix_theme') || 'dark');
-            const [language, setLanguage] = React.useState(() => localStorage.getItem('matrix_language') || 'en');
+            const [theme, setTheme] = React.useState(() => Storage.get(STORAGE_KEYS.THEME) || 'dark');
+            const [language, setLanguage] = React.useState(() => Storage.get(STORAGE_KEYS.LANGUAGE) || 'en');
             const languageOptions = [
                 { code: 'pt-BR', label: 'PT-BR', key: 'pt' },
                 { code: 'en', label: 'EN', key: 'en' },
@@ -859,21 +917,21 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 }
             }, [language]);
             React.useEffect(() => {
-                localStorage.setItem('matrix_language', language);
+                Storage.set(STORAGE_KEYS.LANGUAGE, language);
                 document.documentElement.lang = language;
                 const timer = setTimeout(translateStaticText, 0);
                 return () => clearTimeout(timer);
             }, [language, translateStaticText]);
             const [watchlist, setWatchlist] = React.useState(() => {
-                const saved = localStorage.getItem('matrix_watchlist_v2');
+                const saved = Storage.get(STORAGE_KEYS.WATCHLIST);
                 return saved ? JSON.parse(saved) : ['AAPL', 'MSFT', 'TSLA', 'NVDA'];
             });
             const [activeStock, setActiveStock] = React.useState('AAPL');
             const [timeframe, setTimeframe] = React.useState('1D');
-            const [apiKey, setApiKey] = React.useState(() => localStorage.getItem('matrix_twelvedata_key') || '');
-            const [alpacaKeyId, setAlpacaKeyId] = React.useState(() => localStorage.getItem('matrix_alpaca_key_id') || '');
-            const [alpacaSecretKey, setAlpacaSecretKey] = React.useState(() => localStorage.getItem('matrix_alpaca_secret_key') || '');
-            const [alphaVantageKey, setAlphaVantageKey] = React.useState(() => localStorage.getItem('matrix_alphavantage_key') || '');
+            const [apiKey, setApiKey] = React.useState(() => Storage.get(STORAGE_KEYS.TWELVE_DATA_KEY) || '');
+            const [alpacaKeyId, setAlpacaKeyId] = React.useState(() => Storage.get(STORAGE_KEYS.ALPACA_KEY_ID) || '');
+            const [alpacaSecretKey, setAlpacaSecretKey] = React.useState(() => Storage.get(STORAGE_KEYS.ALPACA_SECRET_KEY) || '');
+            const [alphaVantageKey, setAlphaVantageKey] = React.useState(() => Storage.get(STORAGE_KEYS.ALPHA_VANTAGE_KEY) || '');
             const activeProvider = alpacaKeyId && alpacaSecretKey ? 'ALPACA' : alphaVantageKey ? 'ALPHAVANTAGE' : apiKey ? 'TWELVEDATA' : 'DEMO';
             const hasLiveCredentials = activeProvider !== 'DEMO';
             const [showApiInput, setShowApiInput] = React.useState(false);
@@ -891,7 +949,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             const [showPatternLab, setShowPatternLab] = React.useState(false);
             const [priceAlerts, setPriceAlerts] = React.useState(() => {
                 try {
-                    const saved = JSON.parse(localStorage.getItem('matrix_price_alerts') || 'null');
+                    const saved = JSON.parse(Storage.get(STORAGE_KEYS.PRICE_ALERTS) || 'null');
                     const savedByTicker = saved && !Array.isArray(saved) ? saved : {};
                     return TICKER_DICTIONARY
                         .filter(item => item.alert !== '')
@@ -948,7 +1006,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             }, []);
 
             React.useEffect(() => {
-                localStorage.setItem('matrix_theme', theme);
+                Storage.set(STORAGE_KEYS.THEME, theme);
                 document.body.style.backgroundColor = theme === 'dark' ? '#050505' : '#f0f2f5';
                 if (theme === 'light') {
                     document.body.classList.add('light-theme');
@@ -958,7 +1016,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             }, [theme]);
 
             React.useEffect(() => {
-                localStorage.setItem('matrix_watchlist_v2', JSON.stringify(watchlist));
+                Storage.setJSON(STORAGE_KEYS.WATCHLIST, watchlist);
             }, [watchlist]);
 
             React.useEffect(() => {
@@ -970,7 +1028,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                         enabled: alert.enabled !== false
                     };
                 });
-                localStorage.setItem('matrix_price_alerts', JSON.stringify(compact));
+                Storage.setJSON(STORAGE_KEYS.PRICE_ALERTS, compact);
             }, [priceAlerts]);
 
             const requestNotificationPermission = async () => {
@@ -983,7 +1041,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
                 const notifiedKey = 'matrix_price_alert_notifications';
                 let notified = {};
-                try { notified = JSON.parse(localStorage.getItem(notifiedKey) || '{}'); } catch (e) {}
+                try { notified = JSON.parse(Storage.get(notifiedKey) || '{}'); } catch (e) {}
                 priceAlerts.forEach(alert => {
                     if (alert.enabled === false) return;
                     const current = Number(prices[alert.ticker]?.price);
@@ -1002,7 +1060,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                         delete notified[key];
                     }
                 });
-                localStorage.setItem(notifiedKey, JSON.stringify(notified));
+                Storage.setJSON(notifiedKey, notified);
             }, [priceAlerts]);
 
             React.useEffect(() => {
@@ -1026,7 +1084,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 `timeframe-${CACHE_VERSION}_cache_${ticker}_${selectedTimeframe}_${provider.toLowerCase()}`;
             const readTimeframeCache = (provider, ticker, selectedTimeframe) => {
                 try {
-                    const raw = localStorage.getItem(getCacheKey(provider, ticker, selectedTimeframe));
+                    const raw = Storage.get(getCacheKey(provider, ticker, selectedTimeframe));
                     if (!raw) return null;
                     const parsed = JSON.parse(raw);
                     const config = timeframeConfig[selectedTimeframe] || timeframeConfig['1D'];
@@ -1035,7 +1093,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                 } catch { return null; }
             };
             const writeTimeframeCache = (provider, ticker, selectedTimeframe, data) => {
-                localStorage.setItem(getCacheKey(provider, ticker, selectedTimeframe), JSON.stringify({
+                Storage.setJSON(getCacheKey(provider, ticker, selectedTimeframe), {
                     version: CACHE_VERSION, timestamp: Date.now(), provider, ticker, timeframe: selectedTimeframe, data
                 }));
             };
@@ -1279,7 +1337,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
                         // Fetch and cache the selected ticker's live quote for the lower-right information panel.
                         const quoteCacheKey = `quote_${activeProvider.toLowerCase()}_${activeStock}`;
-                        const quoteCached = JSON.parse(localStorage.getItem(quoteCacheKey) || 'null');
+                        const quoteCached = Storage.getJSON(quoteCacheKey);
                         let quoteJson = !forceRefresh && quoteCached && Date.now() - quoteCached.timestamp < 5 * 60 * 1000 ? quoteCached.data : null;
                         if (!quoteJson) {
                             if (activeProvider === 'ALPACA') {
@@ -1321,7 +1379,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                 quoteJson = await quoteRes.json();
                             }
                             if (!quoteJson.status || quoteJson.status !== 'error') {
-                                localStorage.setItem(quoteCacheKey, JSON.stringify({ timestamp: Date.now(), data: quoteJson }));
+                                Storage.setJSON(quoteCacheKey, { timestamp: Date.now(), data: quoteJson });
                             }
                         }
                         if (quoteJson && (!quoteJson.status || quoteJson.status !== 'error')) {
@@ -1499,7 +1557,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                     }
                 }
 
-                const cachedQuote = JSON.parse(localStorage.getItem(`quote_${activeProvider.toLowerCase()}_${activeStock}`) || 'null');
+                const cachedQuote = Storage.getJSON(`quote_${activeProvider.toLowerCase()}_${activeStock}`);
                 if (cachedQuote?.data && (!quoteInfo[activeStock])) {
                     setQuoteInfo(prev => ({ ...prev, [activeStock]: cachedQuote.data }));
                 }
@@ -1770,10 +1828,10 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                     setApiKey('');
                                     setAlpacaKeyId('');
                                     setAlpacaSecretKey('');
-                                    localStorage.removeItem('matrix_twelvedata_key');
-                                    localStorage.removeItem('matrix_alpaca_key_id');
-                                    localStorage.removeItem('matrix_alpaca_secret_key');
-                                    localStorage.removeItem('matrix_alphavantage_key');
+                                    Storage.remove(STORAGE_KEYS.TWELVE_DATA_KEY);
+                                    Storage.remove(STORAGE_KEYS.ALPACA_KEY_ID);
+                                    Storage.remove(STORAGE_KEYS.ALPACA_SECRET_KEY);
+                                    Storage.remove(STORAGE_KEYS.ALPHA_VANTAGE_KEY);
                                 }} class={`min-h-[38px] px-3 rounded-md border text-xs flex items-center space-x-2 font-mono transition-all cursor-pointer border-red-500/40 text-red-500`}>
                                     <Icons.Trash />
                                     <span class="hidden sm:inline font-bold">CLEAR API</span>
@@ -1823,10 +1881,10 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                         setAlphaVantageKey(alphaVal);
                                         setAlpacaKeyId(alpacaIdVal);
                                         setAlpacaSecretKey(alpacaSecretVal);
-                                        localStorage.setItem('matrix_twelvedata_key', twelveVal);
-                                        localStorage.setItem('matrix_alphavantage_key', alphaVal);
-                                        localStorage.setItem('matrix_alpaca_key_id', alpacaIdVal);
-                                        localStorage.setItem('matrix_alpaca_secret_key', alpacaSecretVal);
+                                        Storage.set(STORAGE_KEYS.TWELVE_DATA_KEY, twelveVal);
+                                        Storage.set(STORAGE_KEYS.ALPHA_VANTAGE_KEY, alphaVal);
+                                        Storage.set(STORAGE_KEYS.ALPACA_KEY_ID, alpacaIdVal);
+                                        Storage.set(STORAGE_KEYS.ALPACA_SECRET_KEY, alpacaSecretVal);
                                         setShowApiInput(false);
                                     }} class="bg-[#00FF66] text-black px-4 text-xs font-mono font-bold rounded-md h-10 cursor-pointer">CONNECT</button>
                                 </div>
@@ -2632,10 +2690,10 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                     setApiKey('');
                                     setAlpacaKeyId('');
                                     setAlpacaSecretKey('');
-                                    localStorage.removeItem('matrix_twelvedata_key');
-                                    localStorage.removeItem('matrix_alpaca_key_id');
-                                    localStorage.removeItem('matrix_alpaca_secret_key');
-                                    localStorage.removeItem('matrix_alphavantage_key');
+                                    Storage.remove(STORAGE_KEYS.TWELVE_DATA_KEY);
+                                    Storage.remove(STORAGE_KEYS.ALPACA_KEY_ID);
+                                    Storage.remove(STORAGE_KEYS.ALPACA_SECRET_KEY);
+                                    Storage.remove(STORAGE_KEYS.ALPHA_VANTAGE_KEY);
                                 }} class={`min-h-[38px] px-3 rounded-md border text-xs flex items-center space-x-2 font-mono transition-all cursor-pointer border-red-500/40 text-red-500`}>
                                     <Icons.Trash />
                                     <span class="hidden sm:inline font-bold">CLEAR API</span>
@@ -2685,10 +2743,10 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                         setAlphaVantageKey(alphaVal);
                                         setAlpacaKeyId(alpacaIdVal);
                                         setAlpacaSecretKey(alpacaSecretVal);
-                                        localStorage.setItem('matrix_twelvedata_key', twelveVal);
-                                        localStorage.setItem('matrix_alphavantage_key', alphaVal);
-                                        localStorage.setItem('matrix_alpaca_key_id', alpacaIdVal);
-                                        localStorage.setItem('matrix_alpaca_secret_key', alpacaSecretVal);
+                                        Storage.set(STORAGE_KEYS.TWELVE_DATA_KEY, twelveVal);
+                                        Storage.set(STORAGE_KEYS.ALPHA_VANTAGE_KEY, alphaVal);
+                                        Storage.set(STORAGE_KEYS.ALPACA_KEY_ID, alpacaIdVal);
+                                        Storage.set(STORAGE_KEYS.ALPACA_SECRET_KEY, alpacaSecretVal);
                                         setShowApiInput(false);
                                     }} class="bg-[#00FF66] text-black px-4 text-xs font-mono font-bold rounded-md h-10 cursor-pointer">CONNECT</button>
                                 </div>
