@@ -2,534 +2,583 @@
 
 ## Mission
 
-Maintain the `tecepeipe/stockdashboard` repository as a reliable, understandable, static stock-market visualisation application.
+Maintain `tecepeipe/stockdashboard` as a reliable, understandable static stock-market visualisation application.
 
-The application is intentionally a single-file HTML project. Prioritise correctness, resilience and preserving the existing user experience over introducing architectural complexity.
+The project is intentionally a **single-file HTML application**. Prioritise correctness, resilience, maintainability and preservation of the existing UX over architectural complexity.
+
+**Current version: 1.9.2**
 
 ## Repository
 
 - Repository: `tecepeipe/stockdashboard`
 - Default branch: `main`
-- Main file: `index.html`
+- Main application: `index.html`
 - Deployment: GitHub Pages
 - Live site: `https://tecepeipe.github.io/stockdashboard/`
-- Public static application
-- No build step should be assumed.
+- No build step.
+- Do not migrate to Vite/npm/modules unless explicitly requested.
 
 ## Non-negotiable behaviour
 
-### 1. Keep mock/demo mode
+### Mock mode
 
-The application must remain useful without an API key.
+Mock data is a product feature.
 
-Mock financial data is intentional and must not be removed merely because live APIs are available.
+When no live credentials exist:
+- load mock market data
+- keep the dashboard fully explorable
+- make demo/simulation status clear
 
-When live credentials are absent:
-- load mock data
-- make it obvious that the data is simulated/demo data
-- allow visitors to explore charts, indicators and pattern recognition
+Never silently present mock or stale data as current live data.
 
-When live credentials are present:
-- use the selected provider
-- clearly identify live/provider mode
-- never silently present stale/mock data as current live data
+### Provider correctness
 
-### 2. Never equate HTTP success with data success
+A request is not successful merely because it returned HTTP 200.
 
-A live request is successful only when its response contains valid, usable market data.
-
-Examples already encountered:
-- HTTP 200 with a usable daily bar
-- HTTP 200 with `{"bars":null,"next_page_token":null,"symbol":"TSLA"}`
-- HTTP 204 No Content
-
-The agent must validate:
-- HTTP status
+Validate:
+- status
 - response body
 - JSON structure
 - symbol
-- timestamp
-- bar array/object presence
+- timestamps
+- bar presence
 - OHLC numeric values
-- finite numbers
+- finite values
 - usable bar count
 
-A 200 response with null/empty bars must not be treated as valid chart data.
+Handle:
+- HTTP 204
+- null bars
+- empty arrays
+- malformed JSON
+- provider error objects
+- incomplete/invalid OHLC
 
-### 3. Trace data all the way to rendering
+A provider failure must not corrupt chart state or blank the entire React/Babel application.
 
-If the browser receives a valid response but the chart does not change, debug the complete chain:
+## Architecture
 
-1. request construction
-2. network response
-3. response parsing
-4. provider validation
-5. normalization
-6. state update
-7. indicator recalculation
-8. pattern detection
-9. chart data transformation
-10. React render
+Keep one physical `index.html`, but maintain logical boundaries:
 
-Do not assume that a 200 in DevTools means the graph has been updated.
+```text
+Provider request
+     |
+     v
+Provider adapter
+     |
+     v
+Validation + normalization
+     |
+     v
+Common market-data model
+     |
+     +--------+---------+
+     |        |         |
+     v        v         v
+   Chart  Indicators  Detector
+     |        |         |
+     +--------+---------+
+              |
+              v
+         Pattern Lab/UI
+```
 
-Add temporary diagnostics where useful, especially:
-- provider
-- symbol
-- timeframe
-- status
-- response shape
-- normalized bar count
-- first/last timestamp
-- state bar count
+Provider-specific field names must stop at the adapter/normalization boundary.
 
-Remove noisy diagnostics when the fix is complete unless they provide lasting value.
+### Current logical layers
 
-## Single-file architecture
-
-Do not split the project into modules unless explicitly requested.
-
-Within `index.html`, prefer logical sections such as:
-- configuration/constants
+Inside `index.html`, preserve separation between:
+- constants/config
 - mock data
+- storage
 - provider adapters
-- API validation/normalisation
-- indicator calculations
+- validation/normalization
+- timeframe/cache
+- symbol metadata
+- technical analysis
 - candlestick detection
-- Pattern Lab statistics
-- support/resistance calculations
-- chart components/helpers
-- range-selection logic
-- alert/watchlist logic
-- translations/language state
-- UI components
-- application state
+- Pattern Lab
+- support/resistance
+- chart model/rendering
+- range selection
+- formatting
+- translations
+- alerts/watchlist
+- Dashboard state
+- regression checks
 
-Logical modularity is encouraged even though the physical project remains one file.
+## Provider precedence
 
-## React/Babel safety
+Do not change without updating the UI/docs:
 
-The project uses browser-side React/Babel.
+1. Alpaca if both Alpaca key ID and secret exist.
+2. Alpha Vantage if its key exists.
+3. Twelve Data if its key exists.
+4. DEMO otherwise.
 
-A previous blank-page failure was caused by:
+## Alpaca rules
 
-`Identifier 'getPatternStatistics' has already been declared`
+Alpaca is the provider with the most historical debugging attention.
 
-Therefore:
-- never introduce duplicate top-level declarations
-- search for an existing function before creating it
-- prefer modifying an existing helper when appropriate
-- after edits, inspect the browser console for Babel syntax errors
-- remember that one parse-time error can prevent the entire application from rendering
+### Market data
 
-## Data providers
+- Current timeframe mapping:
+  - 1D -> 5Min
+  - 1W -> 15Min
+  - 1M -> 30Min
+  - 1Y -> 1Day
+- Browser implementation uses the IEX feed.
+- Use explicit date bounds.
+- Normalize `t/o/h/l/c/v`.
+- Apply canonical timeframe filtering.
+- Recalculate indicators after normalization.
+- Explicitly update the active chart after valid data is processed.
+- Keep quote retrieval separate from historical OHLC retrieval.
 
-Supported live providers:
-- Twelve Data
-- Alpaca
-- Alpha Vantage
+### No-data handling
 
-Provider precedence in the current single-file UI is Alpaca when both Alpaca credentials are present, otherwise Alpha Vantage when its API key is present, otherwise Twelve Data when its key is present, otherwise DEMO/mock mode. Do not silently change this precedence without updating the connection UI text.
+Do not interpret these as equivalent:
 
-### Alpha Vantage implementation rules
+```text
+HTTP 200 + usable bars  -> usable market data
+HTTP 200 + bars:null     -> no usable bars
+HTTP 204                 -> no content
+HTTP error               -> provider/request failure
+network failure          -> transport failure
+```
 
-- Use `TIME_SERIES_INTRADAY` with 5-minute, 15-minute and 30-minute intervals for the 1D, 1W and 1M views respectively.
-- Use `TIME_SERIES_DAILY` full history for 1Y.
-- Normalize `1. open`, `2. high`, `3. low`, `4. close`, `5. volume` to the common OHLCV model.
-- Preserve the provider's `YYYY-MM-DD` session date separately from the timestamp so 1D/1W filtering is not broken by the browser's local timezone.
-- Use `GLOBAL_QUOTE` for the lower-right quote panel when realtime entitlement is available.
-- Use `OVERVIEW`, `INCOME_STATEMENT`, and `EARNINGS` to populate live fundamentals/financial panels when responses contain usable data.
-- Keep technical-indicator calculations local and provider-independent; do not replace the existing indicator pipeline with provider-specific indicator endpoints unless explicitly requested.
-- Alpha Vantage intraday history is premium, so the free tier is not expected to reproduce the dashboard's current intraday views.
+A valid symbol can still have no usable bars for the requested feed/timeframe.
 
-## Alpaca symbol discovery and metadata
+### Alpaca metadata
 
-When working on Alpaca ticker search:
+Use authenticated `/v2/assets/{symbol}` to resolve company metadata when possible.
 
-- Do not restrict live Alpaca search to the built-in `TICKER_DICTIONARY`.
-- A syntactically valid ticker can be accepted even when historical market-data bars are unavailable.
-- Do not treat `bars:null` or an empty bar response as definitive proof that the ticker is invalid.
-- Resolve company names and instrument metadata through Alpaca's authenticated `/v2/assets/{symbol}` endpoint when possible.
-- Asset metadata lookup is supplementary to market-data retrieval; it must not block ticker selection if the metadata request fails.
-- Cache successful metadata lookups and merge asynchronously resolved metadata into the search suggestion, watchlist and active symbol state.
-- If metadata lookup fails, use the ticker itself as the fallback display name.
-- Preserve the distinction between symbol discovery/metadata, market-data availability, and normalized OHLCV processing.
-- Do not reintroduce `/v2/assets` as a market-data validation step merely to determine whether bars exist.
+Rules:
+- metadata lookup is separate from OHLCV retrieval
+- cache successful metadata during the session
+- asynchronous metadata resolution may update the active symbol/search result
+- metadata failure must not prevent ticker selection
+- fall back to the ticker as display name
+- do not use asset lookup as proof that historical bars exist
 
-## Data model
+## Other providers
 
-Use one internal normalized OHLC representation regardless of provider.
+### Twelve Data
 
-A typical normalized bar should contain:
-- timestamp
-- open
-- high
-- low
-- close
-- volume
+Keep the adapter isolated. Convert `values` to the common model before analysis.
 
-Provider-specific fields should be translated before analysis.
+### Alpha Vantage
 
-For Alpaca-style daily data, fields may arrive as:
-- `o` open
-- `h` high
-- `l` low
-- `c` close
-- `v` volume
-- `t` timestamp
-- `n` trade/count metadata
+Current timeframe mapping:
+- 1D -> `TIME_SERIES_INTRADAY` 5-minute
+- 1W -> `TIME_SERIES_INTRADAY` 15-minute
+- 1M -> `TIME_SERIES_INTRADAY` 30-minute
+- 1Y -> `TIME_SERIES_DAILY` full history
 
-Do not make chart code dependent on Alpaca's raw field names.
+Normalize Alpha Vantage's numbered fields into common OHLCV.
 
-## Numerical correctness
+Use provider quote/fundamental endpoints where implemented, but keep the dashboard's technical indicators calculated locally.
 
-Internal calculations should retain full precision.
+Do not promise intraday availability on plans that do not provide it.
 
-For display-only values such as:
-- day change
-- day range
-- percentage changes
+## Normalized data model
 
-use two decimal places where appropriate.
+Use a model similar to:
 
-Do not round the underlying OHLC series merely to fix visual decimal noise.
+```js
+{
+  symbol,
+  name,
+  exchange,
+  currency,
+  provider,
+  modelVersion,
+  bars: [
+    { time, open, high, low, close, volume }
+  ]
+}
+```
 
-Guard all calculations against:
-- division by zero
-- missing history
-- null values
-- NaN
-- Infinity
-- flat-price RSI cases
-- zero/near-zero candle ranges
+Do not make chart/indicator/pattern code consume raw provider objects.
 
-## Indicators
+## Timeframe/caching rules
 
-Preserve the documented periods unless a change is explicitly requested:
-- RSI: 14
-- MACD: 12/26/9
-- volume average: commonly 14
-- other SMA/EMA/Bollinger/ATR periods as defined by the current implementation
+Current configuration:
+- 1D: 5min, 10-day lookback, 100 visible candles, 5-minute freshness.
+- 1W: 15min, 21-day lookback, 160 maximum.
+- 1M: 30min, 70-day lookback, 320 maximum.
+- 1Y: 1day, 430-day lookback, 270 maximum, 2-hour freshness.
 
-When modifying an indicator:
-- document the formula/period
-- preserve insufficient-history handling
-- test the first valid output
-- test flat and missing data
-- verify chart alignment with candles
+Filtering:
+- sort chronologically
+- 1D = latest available session
+- 1W = latest five sessions
+- 1M = rolling UTC month
+- 1Y = rolling UTC year
 
-## Candlestick detectors
+Cache:
+- must be provider/symbol/timeframe specific
+- must be versioned
+- must have expiry/freshness checks
+- force refresh must bypass relevant caches
 
-Treat pattern detection as classification.
+Important 1.9.2 behaviour:
+- a cached historical dataset does not guarantee a current quote exists
+- when the active symbol has cached chart data but no quote snapshot, refresh the active quote
+- avoid reloading unrelated data solely because the user changed to a cached symbol
 
-Known patterns:
+## Symbol metadata
+
+Current sources include:
+- `TICKER_DICTIONARY`
+- `resolvedSymbols`
+- live provider metadata
+
+Do not assume the local dictionary contains every live ticker.
+
+The next intended improvement is to centralize these sources behind one metadata-resolution path.
+
+## Technical-analysis engine
+
+Reusable helpers include:
+- average
+- SMA
+- EMA
+- RSI
+- true range
+- Bollinger Bands
+- technical-indicator orchestration
+
+Preserve current indicator periods and algorithms unless the task explicitly changes them.
+
+Known indicators:
+- EMA 9/21/50
+- SMA 20/50
+- MACD 12/26/9
+- RSI 14
+- ATR
+- Bollinger Bands
+- volume average/ratio
+
+Requirements:
+- guard insufficient history
+- guard zero division
+- handle flat RSI
+- prevent NaN/Infinity from reaching SVG coordinates
+- preserve numerical precision
+- test first valid outputs and edge cases
+
+## Candlestick detection
+
+Detection is separated through `detectCandlestickPatterns`.
+
+Implemented patterns:
 - Hammer
 - Shooting Star
 - Bullish Engulfing
 - Bearish Engulfing
 - Marubozu
-- other patterns present in the current implementation
+- Morning Star
+- Evening Star
+- Tweezer Bottom
+- Tweezer Top
+- Three Inside Up
+- Three Inside Down
+- Three White Soldiers
+- Three Black Crows
 
-Rules must be explicit and deterministic.
+Treat detection as deterministic classification.
 
-Examples of established logic:
-- Hammer/Shooting Star use body-to-range and shadow-to-body relationships.
-- Engulfing is based on real-body relationships.
-- Marubozu requires a dominant body and small shadows and can use ATR as a scale filter.
-- Volume confirmation can compare current volume with the previous 14-candle average.
-- Trend/context can use preceding candles.
+Do not claim:
+- guaranteed reversal
+- guaranteed profitability
+- future prediction
 
-Do not change thresholds casually. If changing them, explain what changed and why.
-
-Do not describe a detected pattern as a guaranteed reversal or trading signal.
+Do not change pattern thresholds casually.
 
 ## Pattern Lab
 
-Pattern Lab is an historical event-study view.
+Pattern Lab is an historical event study.
 
-It should distinguish:
-- detected signal
-- completed outcome
-- incomplete/current signal
-
-For a five-bar outcome:
-- only count a signal as completed when five future candles exist
-- do not treat the current/latest signal as a completed five-bar result
-
-Useful statistics:
+It may expose:
+- bullish/bearish counts
 - total signals
-- bullish/bearish count
-- completed signals
-- incomplete signals
-- average and median returns
-- +1/+3/+5 bar returns
+- completed/open signals
+- average/median returns
+- +1/+3/+5 returns
 - 5-bar win rate
 - sample size
-- trend
-- candle-body percentage
+- trend/context
+- body percentage
 - volume ratio
+- detector test status
 
-If bearish outcomes are direction-adjusted, make that methodology explicit.
+For signal candle N:
+- only count +5 as completed when N+5 exists
+- current/latest signals may be incomplete
+- do not convert historical observations into predictive probabilities
 
-Never turn historical event statistics into claims of future probability.
+If adding a true backtester, explicitly define:
+- entry
+- exit
+- position sizing
+- transaction costs
+- slippage
+- execution timing
+- look-ahead controls
 
-## Chart conventions
+## Support/resistance
 
-The faint horizontal lines behind the OHLC chart are grid lines.
+Keep S/R separate from grid lines.
 
-Do not call them support/resistance.
+Current algorithm:
+- visible candles only
+- five-candle swing window
+- swing high = high >= two candles before and two after
+- swing low = low <= two candles before and two after
+- nearby levels clustered with `Math.max(priceDelta * 0.015, 0.01)`
+- minimum two touches
+- sort by touch count then price
+- maximum three support and three resistance levels
+- displayed price = average clustered touch price
 
-The dashboard now has a separate calculated support/resistance feature.
+Do not change this logic without documenting the change.
 
-### Support/resistance
+## Chart model/rendering
 
-Current implementation:
-- examines visible candles using a 5-candle swing window
-- a swing high occurs when the candle high is at least as high as the highs of the two candles before and two after it
-- a swing low occurs when the candle low is at least as low as the lows of the two candles before and two after it
-- swing highs become resistance candidates; swing lows become support candidates
-- nearby prices are clustered using tolerance `Math.max(priceDelta * 0.015, 0.01)`
-- only clusters with at least two touches are retained
-- clusters are sorted by touch count and then price
-- the chart displays up to three support and three resistance levels
-- displayed level price is the average price of the clustered touches
-- levels are calculated from candles currently visible to the chart
-- S/R lines are visual overlays and are distinct from chart grid lines
-
-When modifying S/R, preserve and document changes to:
-- swing detection
-- tolerance
-- clustering
-- minimum touches
-- ranking
-- number of displayed levels
-
-Preferred chart titles:
-- PRICE + REVERSAL PATTERNS
-- RSI (14)
-- MACD (12,26,9)
-- VOLUME
-- BOLLINGER BANDS
-- ATR
-- PATTERN LAB // HISTORICAL EVENT STUDY
-
-Titles should make the purpose of each graph immediately clear.
-
-## Multi-language UI
-
-The dashboard currently supports:
-- EN — English
-- PT-BR — Brazilian Portuguese
-- ES — Spanish
-- FR — French
-
-Language state is stored in localStorage under `matrix_language`, and the document language attribute is updated through `document.documentElement.lang`.
-
-When adding or changing user-facing UI text:
-- add/update translations for all supported languages
-- keep the English source key stable where the translation system depends on it
-- do not translate technical/API identifiers, ticker symbols or raw provider response fields
-- ensure language changes update the visible interface without requiring a page reload
-- preserve `document.documentElement.lang`
-- test language switching in both dark and light themes
-- check newly added labels, chart titles, S/R labels, range-selection text, alerts and Pattern Lab text for translation coverage
-
-Do not add a new language by translating only the obvious navigation labels; audit all user-facing strings.
-
-## Interactive range selection
-
-The main price chart supports interactive candle-range selection.
-
-The selected range:
-- is defined by a start and end candle index
-- can be dragged across the chart
-- calculates price change from the first selected candle close to the last selected candle close
-- calculates percentage change relative to the first selected candle close
-- displays the selected range alongside normal hover information
-- renders a visual selection overlay
-- displays range values to two decimal places
-
-When modifying range selection:
-- clamp indexes to valid candle bounds
-- handle reversed start/end positions
-- handle an empty/no-selection state
-- avoid division by zero
-- preserve the selected-range calculation when candles are filtered or the visible range changes
-- do not confuse selected-range performance with a trading signal or backtest result
-
-## UI preservation
-
-The existing style is a compact trading-terminal interface.
+`buildChartModel(data)` centralizes chart geometry.
 
 Preserve:
-- dark/light theme
-- Space Grotesk
-- JetBrains Mono for technical/numeric content
-- Tailwind-based styling
-- SVG icons
-- dense cards/tables
-- green/red market semantics
-- responsive behaviour
+- price/MACD extents
+- panel dimensions
+- candle spacing
+- RSI/MACD positions
+- sanitized chart input
 
-Avoid broad visual rewrites when the requested change is functional.
+The chart must defend against non-finite OHLC/indicator values before calculating SVG coordinates.
 
-## Alerts and watchlists
+There must be exactly one active `CandlestickChart` component.
 
-Browser-based alerts/watchlists may use localStorage.
+## Range selection
+
+Use `calculateRangeSelection(data, selection)`.
 
 Requirements:
-- validate stored JSON
-- tolerate deleted/corrupt entries
-- compare numeric prices safely
-- avoid duplicate alerts
-- avoid repeated firing on every render
-- keep browser persistence separate from live API state
+- empty state -> null
+- validate numeric indexes
+- clamp indexes
+- support reversed drag
+- calculate first/last selected candles
+- calculate close-to-close price change
+- calculate percentage from first close
+- protect against zero starting price
+- preserve visual overlay and existing interaction
 
-These are browser features, not server-side notifications.
+Do not call this a backtest.
+
+## Formatting
+
+Use centralized helpers:
+- `formatFixed`
+- `formatPrice`
+- `formatPercent`
+- `formatRatio`
+- `formatVolume`
+- `calculateRangePercent`
+
+Display rounding is presentation only. Keep underlying market data precise.
+
+## Translation
+
+Supported:
+- EN
+- PT-BR
+- ES
+- FR
+
+Central translation dictionary: `uiTranslations`.
+
+When adding UI text:
+- update all four languages
+- preserve translation keys
+- do not translate ticker/provider identifiers
+- test without reload
+- preserve `document.documentElement.lang`
+- test dark/light themes
+- audit chart titles, S/R, range, alerts and Pattern Lab
+
+## State/storage
+
+Use the centralized `Storage` helper and `STORAGE_KEYS`.
+
+Use `useStoredState` for persistent React state where appropriate.
+
+Persisted application values currently include:
+- theme
+- language
+- watchlist
+- Twelve Data API key
+- Alpaca key ID
+- Alpaca secret
+- Alpha Vantage API key
+
+Storage must tolerate missing or malformed values.
+
+## Security
+
+API keys are stored unencrypted in browser localStorage.
+
+Never:
+- hard-code credentials
+- commit secrets
+- claim localStorage is encrypted
+- describe browser-side API credentials as confidential
+
+For production confidentiality, use a backend/serverless proxy.
+
+## React/Babel safety
+
+Previous failures included:
+- duplicate `getPatternStatistics`
+- duplicate `CandlestickChart`
+- duplicate translation declarations
+- duplicate trailing JavaScript after `</html>`
+- invalid `await` usage in a non-async context
+
+Before adding code:
+1. search for existing declarations
+2. preserve valid function boundaries
+3. ensure `await` remains inside async functions
+4. verify one React root
+5. verify one closing `</html>` with no trailing executable content
+
+After editing:
+- inspect the browser console
+- fix the first parse/runtime error before investigating secondary symptoms
+
+## Regression tests
+
+Current load-time checks cover core formatting and range helpers. Candlestick detector self-tests remain separate.
+
+When changing a pure helper, add a focused regression check.
+
+Do not remove existing tests just to make a change pass.
 
 ## Debugging procedure
 
-For a blank page:
-1. open DevTools Console
-2. fix the first syntax/runtime error
-3. check for duplicate declarations
-4. check Babel compilation
-5. only then investigate application logic
+### Blank page
+1. DevTools Console.
+2. First syntax/parse error.
+3. Duplicate declarations.
+4. Babel compilation.
+5. React root.
+6. Application logic.
 
-For an API refresh problem:
-1. reproduce with one symbol, preferably MSFT/TSLA
-2. inspect the exact request
-3. inspect HTTP status
-4. inspect raw response
-5. validate the response structure
-6. inspect normalized bars
-7. inspect React state
-8. inspect chart input
-9. compare with working Twelve Data path
-10. test empty/null/204 responses
+### API/chart failure
+1. Reproduce with one ticker.
+2. Inspect request.
+3. Inspect status.
+4. Inspect raw body.
+5. Validate provider response.
+6. Inspect normalized bars.
+7. Inspect state.
+8. Inspect chart input/model.
+9. Compare provider path.
+10. Test null/empty/204/malformed responses.
 
-For a visual problem:
-1. determine whether the data is wrong or only the rendering is wrong
-2. inspect actual values
-3. check SVG dimensions/scales
-4. check clipping/overflow
-5. check responsive sizing
-6. avoid changing calculations to solve CSS/layout problems
+### Quote inconsistency
+Check:
+- provider quote
+- last normalized OHLC candle
+- cached quote snapshot
+- active ticker
+- refresh timing
 
-For an S/R problem:
-1. verify the visible candle set
-2. inspect detected swing highs/lows
-3. inspect tolerance and clusters
-4. verify minimum two-touch requirement
-5. verify displayed level count and ordering
-6. distinguish S/R overlays from grid lines
+Do not silently mix sources without documenting the intended semantics.
 
-For a range-selection problem:
-1. verify mouse/selection start and end indexes
-2. verify clamping to visible candle bounds
-3. verify the selected first/last closes
-4. verify price and percentage calculations
-5. verify the overlay and readout
-6. test reversed, empty and single-candle selections
+### S/R
+Check visible candle set, swing points, tolerance, clusters, two-touch minimum and displayed count.
 
-For a language problem:
-1. verify the selected language state
-2. verify `matrix_language` persistence
-3. verify the translation lookup/key
-4. check for untranslated newly added UI strings
-5. verify `document.documentElement.lang`
-6. test switching without reload
+### Range
+Check indexes, clamping, first/last close, absolute change, percentage change and overlay.
 
-## Testing requirements
+### Language
+Check state, storage, dictionary key, DOM language and all visible strings.
 
-Before considering a data-path change complete, test:
-- no API key / mock mode
-- valid Twelve Data
-- valid Alpaca
-- Alpaca 200 + valid bars
-- Alpaca 200 + null bars
-- 204
-- malformed response
-- empty bars
+## Test matrix
+
+Before completing a change, test as applicable:
+- mock
+- Twelve Data
+- Alpha Vantage
+- Alpaca valid data
+- Alpaca null bars
+- Alpaca 204
+- malformed/empty data
 - invalid OHLC
-- stale timestamps
 - symbol switching
-- chart refresh
-- indicator recomputation
-- pattern markers
+- cached symbol with missing quote
+- force refresh
+- indicators
+- candlestick markers
 - Pattern Lab
-- support/resistance levels
-- grid-line vs S/R distinction
+- S/R
 - range selection
-- reversed/empty/single-candle range cases
-- EN/PT-BR/ES/FR language switching
+- reversed/empty/single range
+- EN/PT-BR/ES/FR
 - language persistence
-- localStorage persistence
-- alerts
 - theme
+- localStorage
+- alerts
 - responsive layout
-
-Always verify the page loads from a fresh browser session.
-
-## Documentation rules
-
-README and inline documentation should describe the application as a visualisation/analysis tool.
-
-Good wording:
-
-> An interactive, single-file stock market dashboard for exploring price action, technical indicators, candlestick reversal patterns, historical pattern statistics, and market data.
-
-Explain:
-- mock/demo mode
-- Twelve Data and Alpaca support
-- browser-side API-key storage limitation
-- technical indicators
-- pattern recognition
-- Pattern Lab as historical analysis
-- support/resistance
-- range selection
-- multilingual UI
-- static deployment
-
-Avoid language claiming that patterns predict the market or provide guaranteed trading signals.
+- fresh browser session
 
 ## Change discipline
 
-For every requested modification:
-1. inspect existing implementation
-2. identify the smallest correct change
-3. preserve mock mode
-4. preserve existing providers unless intentionally changing them
-5. avoid duplicate declarations
-6. validate external data
-7. preserve internal numerical precision
-8. test the browser console
-9. test the affected UI path
-10. update documentation when behaviour changes
-11. keep `skills.md` and `agent.md` aligned on implemented functionality
+For every modification:
+1. Fetch the current `main` file/SHA.
+2. Understand the existing implementation.
+3. Make the smallest coherent change.
+4. Preserve mock mode.
+5. Preserve provider behaviour unless intentionally changing it.
+6. Avoid duplicate declarations.
+7. Keep normalized data boundaries.
+8. Preserve internal numerical precision.
+9. Test the affected path and browser console.
+10. Update README/skills/agent when behaviour changes.
+11. Prefer small, reversible commits.
+12. Re-fetch after a GitHub update before any subsequent SHA-dependent update.
 
-Do not remove existing functionality just to simplify a fix.
+## Completed refactors through 1.9.2
 
-## Backlog
+The single-file architecture now includes logical separation for:
+1. centralized browser storage
+2. normalized market data
+3. provider loading
+4. Alpha Vantage adapter
+5. Twelve Data adapter
+6. defensive chart-data sanitization
+7. duplicate chart removal
+8. technical-analysis engine
+9. candlestick detector and Pattern Lab
+10. formatting/calculation helpers
+11. chart model
+12. range selection
+13. translations
+14. persistent Dashboard state
+15. regression checks
+16. duplicate trailing-document cleanup
+17. Alpaca active-symbol metadata resolution
+18. active quote refresh for cached symbol switching
 
-Potential future work:
-- robust provider adapters and diagnostics
-- clearer stale-data detection
-- stronger response/schema validation
-- logical internal modules while retaining single HTML file
-- configurable overlays
-- richer signal context
-- true historical backtesting
-- expanded watchlists
-- browser alerts
-- automated tests
-- improvements to support/resistance level presentation and tuning
-- richer chart legends/titles
-- clearer stale-data/API diagnostics
+## Next priorities
 
-Backtesting must use explicit strategy rules and avoid look-ahead bias. It is separate from Pattern Lab's descriptive historical event statistics.
+Work should proceed in small, testable commits.
 
-
-### Live ticker discovery
-
-When a live API provider is configured, the ticker search must query the provider's instrument catalog instead of relying only on `TICKER_DICTIONARY`. Twelve Data uses `/symbol_search` and filters US NASDAQ/NYSE results; Alpha Vantage uses `SYMBOL_SEARCH`; Alpaca validates the exact ticker against its US equity asset endpoint and accepts NASDAQ/NYSE. Mock mode continues to use the local dictionary. Unknown live tickers can be added to the watchlist and then flow through the normal provider OHLCV pipeline.
+Priority order:
+1. centralize symbol metadata resolution
+2. improve Alpaca null/204/no-data diagnostics
+3. define quote versus last-OHLC semantics consistently
+4. centralize cache/request policy
+5. add provider fixtures and regression coverage
+6. further logically separate UI sections while keeping one HTML file
