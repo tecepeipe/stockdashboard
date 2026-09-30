@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="1.0.5">
+    <meta name="version" content="1.0.6">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -1741,8 +1741,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                         
                         <aside class={`lg:col-span-3 border-r flex flex-col relative z-20 ${theme === 'dark' ? 'border-zinc-900 bg-[#070708]' : 'border-zinc-200 bg-zinc-100'}`}>
                             <div class={`p-4 border-b ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'}`}>
-                                <div class="relative">
-                                    <input type="text" value={searchQuery} onChange={executeSearchEngine} onKeyDown={async (e) => {
+                                const handleSearchKeyDown = async (e) => {
                                         if (e.key !== 'Enter') return;
                                         e.preventDefault();
                                         const query = searchQuery.trim();
@@ -1756,6 +1755,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                             addSearchSymbol(exactSuggestion);
                                             return;
                                         }
+
                                         if (exactLocal && !hasLiveCredentials) {
                                             addSearchSymbol({...exactLocal, source: 'DICTIONARY', currency: exactLocal.currency || 'USD'});
                                             return;
@@ -1797,10 +1797,15 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                                 }
                                             }
 
-                                                                                    if (exactLocal) {
+                                            return;
+                                        }
+
+                                        if (exactLocal) {
                                             addSearchSymbol({...exactLocal, source: 'DICTIONARY', currency: exactLocal.currency || 'USD'});
                                         }
-                                    }} placeholder="SCAN CORE EXCHANGE INDEX..." class={`w-full border rounded-md pl-10 pr-4 py-2 text-xs font-mono uppercase focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-white placeholder-zinc-600' : 'bg-white border-zinc-300 text-zinc-800 placeholder-zinc-400'}`} />
+                                    };
+                                <div class="relative">
+                                    <input type="text" value={searchQuery} onChange={executeSearchEngine} onKeyDown={handleSearchKeyDown} placeholder="SCAN CORE EXCHANGE INDEX..." class={`w-full border rounded-md pl-10 pr-4 py-2 text-xs font-mono uppercase focus:outline-hidden ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-white placeholder-zinc-600' : 'bg-white border-zinc-300 text-zinc-800 placeholder-zinc-400'}`} />
                                     <span class={`absolute left-3 top-2.5 ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}><Icons.Search /></span>
                                 
 
