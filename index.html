@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="1.2.0">
+    <meta name="version" content="1.3.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -566,7 +566,7 @@
             return calculateTechnicalIndicators(data);
         };
 
-        const scanCandlestickPatterns = (data) => {
+        const detectCandlestickPatterns = (data) => {
             if (!Array.isArray(data) || data.length < 4) return [];
 
             const segments = [];
@@ -928,43 +928,52 @@
         ];
 
         const runCandlestickPatternSelfTests = () => CANDLE_PATTERN_TESTS.map(test => {
-            const matches = scanCandlestickPatterns(test.candles).some(pattern => pattern.label === test.expected);
+            const matches = detectCandlestickPatterns(test.candles).some(pattern => pattern.label === test.expected);
             return {...test, passed: matches};
         });
 
         const CANDLE_PATTERN_TEST_RESULTS = runCandlestickPatternSelfTests();
-const getPatternStatistics = data => getPatternStatisticsSafe(data);
-        const getPatternStatisticsSafe = data => {
+const analyzePatternLab = data => {
             if (!Array.isArray(data) || !data.length) return [];
-            return scanCandlestickPatterns(data).map(p => {
-                const entry = Number(data[p.endIndex]?.close) || 0;
-                const context = p.context || {};
+
+            // Pattern Lab consumes detector events and adds outcome statistics.
+            // It does not participate in candlestick recognition itself.
+            return detectCandlestickPatterns(data).map(pattern => {
+                const entry = Number(data[pattern.endIndex]?.close) || 0;
+                const context = pattern.context || {};
                 const result = {
-                    ...p,
-                    time: data[p.endIndex]?.time ?? 'N/A',
+                    ...pattern,
+                    time: data[pattern.endIndex]?.time ?? 'N/A',
                     entry,
-                    rsi: Number(data[p.endIndex]?.rsi) || 0,
-                    macd: Number(data[p.endIndex]?.macd) || 0,
+                    rsi: Number(data[pattern.endIndex]?.rsi) || 0,
+                    macd: Number(data[pattern.endIndex]?.macd) || 0,
                     volumeRatio: Number.isFinite(context.volumeRatio) ? context.volumeRatio : null,
                     returns: {},
                     completed: false,
                     move: null,
                     directionAdjusted: null
                 };
+
                 [1, 3, 5].forEach(horizon => {
-                    const futureClose = Number(data[p.endIndex + horizon]?.close);
+                    const futureClose = Number(data[pattern.endIndex + horizon]?.close);
                     if (entry > 0 && Number.isFinite(futureClose)) {
                         result.returns[horizon] = ((futureClose - entry) / entry) * 100;
                     }
                 });
+
                 if (Object.prototype.hasOwnProperty.call(result.returns, 5)) {
                     result.move = result.returns[5];
-                    result.directionAdjusted = p.type === 'BEARISH' ? -result.move : result.move;
+                    result.directionAdjusted = pattern.type === 'BEARISH' ? -result.move : result.move;
                     result.completed = true;
                 }
+
                 return result;
             });
         };
+
+        // Backward-compatible names retained for existing UI call sites.
+        const getPatternStatistics = data => analyzePatternLab(data);
+        const getPatternStatisticsSafe = data => analyzePatternLab(data);
         function Dashboard() {
             const [theme, setTheme] = React.useState(() => Storage.get(STORAGE_KEYS.THEME) || 'dark');
             const [language, setLanguage] = React.useState(() => Storage.get(STORAGE_KEYS.LANGUAGE) || 'en');
@@ -2378,7 +2387,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             const macdTop = rsiTop + rsiAreaHeight + panelGap;
             const horizontalStep = widthDimension / chartData.length;
 
-            const identifiedPatterns = showPatterns ? scanCandlestickPatterns(chartData) : [];
+            const identifiedPatterns = showPatterns ? detectCandlestickPatterns(chartData) : [];
 
             // Derive simple horizontal support/resistance levels from repeated swing points.
             // Levels are calculated from the same visible candles rendered by this chart.
