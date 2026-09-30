@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="1.1.4">
+    <meta name="version" content="1.1.5">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -1253,6 +1253,57 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
 
             };
 
+            // Alpha Vantage adapter: provider-specific fetching and normalization are isolated here.
+            const loadAlphaVantageMarketData = async ({
+                watchlist,
+                selectedTimeframeConfig,
+                timeframe,
+                activeStock,
+                fetchAlphaVantageJson,
+                setRenderedChartData,
+                writeTimeframeCache,
+                getTimeframeBars,
+                calculateTechnicalIndicators
+            }) => {
+                            for (let ticker of watchlist) {
+                                const chartPointLimit = selectedTimeframeConfig.maxCandles;
+                                const isIntraday = timeframe !== '1Y';
+                                const interval = timeframe === '1D' ? '5min' : timeframe === '1W' ? '15min' : '30min';
+                                const params = isIntraday
+                                    ? { function: 'TIME_SERIES_INTRADAY', symbol: ticker, interval, outputsize: 'full', adjusted: 'true', extended_hours: 'false' }
+                                    : { function: 'TIME_SERIES_DAILY', symbol: ticker, outputsize: 'full' };
+
+                                const avJson = await fetchAlphaVantageJson(params);
+                                const seriesKey = isIntraday ? `Time Series (${interval})` : 'Time Series (Daily)';
+                                const series = avJson[seriesKey];
+                                if (!series || typeof series !== 'object') {
+                                    throw new Error(`Alpha Vantage returned no ${timeframe} time series for ${ticker}`);
+                                }
+
+                                const normalizedAlphaVantage = Object.entries(series).map(([timestamp, v]) => ({
+                                    time: timestamp,
+                                    sessionDate: timestamp.slice(0, 10),
+                                    open: Number(v['1. open']),
+                                    high: Number(v['2. high']),
+                                    low: Number(v['3. low']),
+                                    close: Number(v['4. close']),
+                                    volume: Number(v['5. volume'] || 0)
+                                })).filter(v =>
+                                    v.time && [v.open, v.high, v.low, v.close].every(Number.isFinite) &&
+                                    v.high >= Math.max(v.open, v.close) &&
+                                    v.low <= Math.min(v.open, v.close)
+                                ).sort((a, b) => new Date(a.time) - new Date(b.time));
+
+                                const visibleAlphaVantage = getTimeframeBars(normalizedAlphaVantage, timeframe).slice(-chartPointLimit);
+                                const processedData = calculateTechnicalIndicators(visibleAlphaVantage);
+                                if (processedData.length) {
+                                    if (ticker === activeStock) setRenderedChartData(processedData);
+                                    writeTimeframeCache('ALPHAVANTAGE', ticker, timeframe, processedData);
+                                } else {
+                                    console.warn(`Alpha Vantage returned no usable OHLC bars for ${ticker}`);
+                                }
+            };
+
             const fetchPipelineData = React.useCallback(async (forceRefresh = false) => {
                 setSyncProgress(10);
                 setSyncStatusText('SCANNING CHANNELS...');
@@ -1316,44 +1367,17 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                 calculateTechnicalIndicators
                             });
                         } else if (activeProvider === 'ALPHAVANTAGE') {
-                            for (let ticker of watchlist) {
-                                const chartPointLimit = selectedTimeframeConfig.maxCandles;
-                                const isIntraday = timeframe !== '1Y';
-                                const interval = timeframe === '1D' ? '5min' : timeframe === '1W' ? '15min' : '30min';
-                                const params = isIntraday
-                                    ? { function: 'TIME_SERIES_INTRADAY', symbol: ticker, interval, outputsize: 'full', adjusted: 'true', extended_hours: 'false' }
-                                    : { function: 'TIME_SERIES_DAILY', symbol: ticker, outputsize: 'full' };
-
-                                const avJson = await fetchAlphaVantageJson(params);
-                                const seriesKey = isIntraday ? `Time Series (${interval})` : 'Time Series (Daily)';
-                                const series = avJson[seriesKey];
-                                if (!series || typeof series !== 'object') {
-                                    throw new Error(`Alpha Vantage returned no ${timeframe} time series for ${ticker}`);
-                                }
-
-                                const normalizedAlphaVantage = Object.entries(series).map(([timestamp, v]) => ({
-                                    time: timestamp,
-                                    sessionDate: timestamp.slice(0, 10),
-                                    open: Number(v['1. open']),
-                                    high: Number(v['2. high']),
-                                    low: Number(v['3. low']),
-                                    close: Number(v['4. close']),
-                                    volume: Number(v['5. volume'] || 0)
-                                })).filter(v =>
-                                    v.time && [v.open, v.high, v.low, v.close].every(Number.isFinite) &&
-                                    v.high >= Math.max(v.open, v.close) &&
-                                    v.low <= Math.min(v.open, v.close)
-                                ).sort((a, b) => new Date(a.time) - new Date(b.time));
-
-                                const visibleAlphaVantage = getTimeframeBars(normalizedAlphaVantage, timeframe).slice(-chartPointLimit);
-                                const processedData = calculateTechnicalIndicators(visibleAlphaVantage);
-                                if (processedData.length) {
-                                    if (ticker === activeStock) setRenderedChartData(processedData);
-                                    writeTimeframeCache('ALPHAVANTAGE', ticker, timeframe, processedData);
-                                } else {
-                                    console.warn(`Alpha Vantage returned no usable OHLC bars for ${ticker}`);
-                                }
-                            }
+                            await loadAlphaVantageMarketData({
+                                watchlist,
+                                selectedTimeframeConfig,
+                                timeframe,
+                                activeStock,
+                                fetchAlphaVantageJson,
+                                setRenderedChartData,
+                                writeTimeframeCache,
+                                getTimeframeBars,
+                                calculateTechnicalIndicators
+                            });
                         } else {
                             const symbolsParam = watchlist.join(',');
                             const url = `https://api.twelvedata.com/time_series?symbol=${symbolsParam}&interval=${selectedInterval}&outputsize=${selectedTimeframeConfig.outputsize}&apikey=${apiKey}`;
