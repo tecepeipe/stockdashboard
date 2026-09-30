@@ -1095,7 +1095,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
             const writeTimeframeCache = (provider, ticker, selectedTimeframe, data) => {
                 Storage.setJSON(getCacheKey(provider, ticker, selectedTimeframe), {
                     version: CACHE_VERSION, timestamp: Date.now(), provider, ticker, timeframe: selectedTimeframe, data
-                }));
+                });
             };
 
             // Use UTC consistently because API timestamps are UTC. Keep only complete requested windows.
