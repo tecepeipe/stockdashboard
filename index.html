@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="1.9.0">
+    <meta name="version" content="1.9.1">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -2091,6 +2091,26 @@ function Dashboard() {
                 };
             }, [searchQuery, hasLiveCredentials, activeProvider, apiKey, alpacaKeyId, alpacaSecretKey, resolveAlpacaAsset]);
 
+
+            React.useEffect(() => {
+                if (activeProvider !== 'ALPACA' || !activeStock) return;
+                if (resolvedSymbols[activeStock]) return;
+
+                let cancelled = false;
+                resolveAlpacaAsset(activeStock).then(asset => {
+                    if (cancelled || !asset) return;
+                    setResolvedSymbols(prev => ({
+                        ...prev,
+                        [activeStock]: {
+                            name: asset.name || activeStock,
+                            exchange: asset.exchange || 'US',
+                            currency: asset.currency || 'USD'
+                        }
+                    }));
+                });
+
+                return () => { cancelled = true; };
+            }, [activeProvider, activeStock, resolvedSymbols, resolveAlpacaAsset]);
 
             const selectEngineNode = (node) => {
                 addSearchSymbol(node);
