@@ -340,7 +340,7 @@
                 const high = Math.max(open, close) + 0.08 + random() * 0.14;
                 const low = Math.min(open, close) - 0.08 - random() * 0.14;
                 data.push({
-                    time: `${dataPoints - i}${timeframeLabel === 'day' ? 'd' : timeframeLabel === 'week' ? 'w' : 'm'} ago`,
+                    time: new Date(Date.now() - (dataPoints - i) * (timeframe === '1D' ? 5 * 60 * 1000 : timeframe === '1W' ? 60 * 60 * 1000 : timeframe === '1M' ? 4 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000)).toISOString(),
                     open: +open.toFixed(2),
                     close: +close.toFixed(2),
                     high: +high.toFixed(2),
