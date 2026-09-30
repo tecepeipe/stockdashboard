@@ -2,23 +2,7 @@
 
 An interactive, single-file stock market dashboard for exploring price action, technical indicators, candlestick reversal patterns, historical pattern behaviour, support/resistance, market data, watchlists and browser-side price alerts.
 
-**Current application version: 1.10.0**
-
 The application starts with **built-in mock market data**, allowing visitors to explore the dashboard without API credentials. When live credentials are supplied, the dashboard can retrieve market data from Twelve Data, Alpaca or Alpha Vantage.
-
-## What's new in v1.10.0
-
-- Indicator warm-up correctness: EMA/RSI/SMA/Bollinger Bands use null warm-up windows, MACD trend is null-safe, and ATR uses Wilder smoothing.
-- Demo (FAKE) mode now computes real indicators after normalization, not hardcoded values.
-- Intraday sessions bucketed in Eastern time (US market sessions) and fiscal quarter labels fixed.
-- Rate-limit detection with exponential backoff, missing-only per-ticker refetch and per-ticker failure isolation; quote freshness tracked separately from timeframe cache.
-- Alpaca bars fetched newest-first with `page_token` pagination.
-- CDN scripts (Tailwind, React, ReactDOM, Babel) pinned with Subresource Integrity hashes; referrer policy set to `no-referrer`.
-- `CandlestickChart` memoized with rAF-coalesced hover; telemetry and ticker lookups deduplicated.
-- React-level i18n: `LanguageContext` + `t()` replaces the DOM TreeWalker translator; `document.title` follows language.
-- Structural extraction: module-scope provider loaders, `useMarketDataPipeline` hook, and section components (`HeaderBar`, `StatusBar`, `ApiKeyPanel`, `WatchlistSidebar`, `ChartSection`, `RightRail`) while keeping the single-file architecture.
-- Pattern Lab labelled with a DEMO MODE banner in demo data; price-alert notifications guarded when permission is unavailable; pipeline rejections handled explicitly.
-- Three in-page test suites: `[REGRESSION CHECKS]`, `[INDICATOR CHECKS]` and `[CANDLE PATTERN TESTS]` exposed through `window.__APP_DEBUG__`.
 
 ## Features
 
