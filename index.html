@@ -1302,6 +1302,7 @@ const getPatternStatistics = data => getPatternStatisticsSafe(data);
                                 } else {
                                     console.warn(`Alpha Vantage returned no usable OHLC bars for ${ticker}`);
                                 }
+                            }
             };
 
             const fetchPipelineData = React.useCallback(async (forceRefresh = false) => {
