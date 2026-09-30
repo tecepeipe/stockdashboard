@@ -142,6 +142,20 @@ Provider precedence in the current single-file UI is Alpaca when both Alpaca cre
 - Keep technical-indicator calculations local and provider-independent; do not replace the existing indicator pipeline with provider-specific indicator endpoints unless explicitly requested.
 - Alpha Vantage intraday history is premium, so the free tier is not expected to reproduce the dashboard's current intraday views.
 
+## Alpaca symbol discovery and metadata
+
+When working on Alpaca ticker search:
+
+- Do not restrict live Alpaca search to the built-in `TICKER_DICTIONARY`.
+- A syntactically valid ticker can be accepted even when historical market-data bars are unavailable.
+- Do not treat `bars:null` or an empty bar response as definitive proof that the ticker is invalid.
+- Resolve company names and instrument metadata through Alpaca's authenticated `/v2/assets/{symbol}` endpoint when possible.
+- Asset metadata lookup is supplementary to market-data retrieval; it must not block ticker selection if the metadata request fails.
+- Cache successful metadata lookups and merge asynchronously resolved metadata into the search suggestion, watchlist and active symbol state.
+- If metadata lookup fails, use the ticker itself as the fallback display name.
+- Preserve the distinction between symbol discovery/metadata, market-data availability, and normalized OHLCV processing.
+- Do not reintroduce `/v2/assets` as a market-data validation step merely to determine whether bars exist.
+
 ## Data model
 
 Use one internal normalized OHLC representation regardless of provider.
