@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="1.1.9">
+    <meta name="version" content="1.2.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -302,19 +302,134 @@
             return mockFinancialsData[ticker];
         };
 
+        // Technical-analysis engine. These pure helpers keep the indicator math
+        // independent from React, providers, chart rendering and Pattern Lab.
+        const average = values =>
+            values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+
+        const calculateSMA = (period, values) =>
+            values.map((_, index) => average(values.slice(Math.max(0, index - period + 1), index + 1)));
+
+        const calculateEMA = (period, values) => {
+            if (!values.length) return [];
+            const k = 2 / (period + 1);
+            const ema = new Array(values.length).fill(values[0] || 0);
+            const seedLength = Math.min(period, values.length);
+
+            ema[seedLength - 1] = average(values.slice(0, seedLength));
+
+            for (let i = seedLength; i < values.length; i++) {
+                ema[i] = values[i] * k + ema[i - 1] * (1 - k);
+            }
+
+            // Preserve the original warm-up behavior.
+            for (let i = seedLength - 2; i >= 0; i--) {
+                ema[i] = values[i];
+            }
+
+            return ema;
+        };
+
+        const calculateRSI = (closes, period = 14) => {
+            const rsi = new Array(closes.length).fill(50);
+            if (closes.length <= period) return rsi;
+
+            let gains = 0;
+            let losses = 0;
+
+            for (let i = 1; i <= period; i++) {
+                const change = closes[i] - closes[i - 1];
+                if (change > 0) gains += change;
+                else losses -= change;
+            }
+
+            let averageGain = gains / period;
+            let averageLoss = losses / period;
+            const currentRSI = () =>
+                averageLoss === 0
+                    ? (averageGain === 0 ? 50 : 100)
+                    : 100 - 100 / (1 + averageGain / averageLoss);
+
+            rsi[period] = currentRSI();
+
+            for (let i = period + 1; i < closes.length; i++) {
+                const change = closes[i] - closes[i - 1];
+                averageGain = (averageGain * (period - 1) + (change > 0 ? change : 0)) / period;
+                averageLoss = (averageLoss * (period - 1) + (change < 0 ? -change : 0)) / period;
+                rsi[i] = currentRSI();
+            }
+
+            return rsi;
+        };
+
+        const calculateTrueRange = (closes, highs, lows) =>
+            closes.map((close, index) => {
+                const previousClose = index ? closes[index - 1] : close;
+                return Math.max(
+                    highs[index] - lows[index],
+                    Math.abs(highs[index] - previousClose),
+                    Math.abs(lows[index] - previousClose)
+                );
+            });
+
+        const calculateBollingerBands = (closes, period = 20, standardDeviations = 2) =>
+            closes.map((_, index) => {
+                const window = closes.slice(Math.max(0, index - period + 1), index + 1);
+                const middle = average(window);
+                const standardDeviation = Math.sqrt(
+                    average(window.map(value => (value - middle) ** 2))
+                );
+
+                return {
+                    middle,
+                    upper: middle + standardDeviations * standardDeviation,
+                    lower: middle - standardDeviations * standardDeviation
+                };
+            });
+
         const calculateTechnicalIndicators = (data) => {
             if (!Array.isArray(data) || data.length === 0) return [];
-            const closes=data.map(d=>Number(d.close)||0), highs=data.map(d=>Number(d.high)||0), lows=data.map(d=>Number(d.low)||0), volumes=data.map(d=>Number(d.volume)||0);
-            const average=values=>values.length?values.reduce((a,b)=>a+b,0)/values.length:0;
-            const sma=(period,values)=>values.map((_,i)=>average(values.slice(Math.max(0,i-period+1),i+1)));
-            const calcEMA=(period,values)=>{if(!values.length)return[];const k=2/(period+1),ema=new Array(values.length).fill(values[0]||0),n=Math.min(period,values.length);ema[n-1]=average(values.slice(0,n));for(let i=n;i<values.length;i++)ema[i]=values[i]*k+ema[i-1]*(1-k);for(let i=n-2;i>=0;i--)ema[i]=values[i];return ema;};
-            const ema9=calcEMA(9,closes),ema12=calcEMA(12,closes),ema21=calcEMA(21,closes),ema26=calcEMA(26,closes),ema50=calcEMA(50,closes);
-            const macdLine=ema12.map((v,i)=>v-ema26[i]),signalLine=calcEMA(9,macdLine),rsi=new Array(closes.length).fill(50);
-            if(closes.length>14){let gains=0,losses=0;for(let i=1;i<=14;i++){const d=closes[i]-closes[i-1];if(d>0)gains+=d;else losses-=d;}let avgGain=gains/14,avgLoss=losses/14;const r=()=>avgLoss===0?(avgGain===0?50:100):100-100/(1+avgGain/avgLoss);rsi[14]=r();for(let i=15;i<closes.length;i++){const d=closes[i]-closes[i-1];avgGain=(avgGain*13+(d>0?d:0))/14;avgLoss=(avgLoss*13+(d<0?-d:0))/14;rsi[i]=r();}}
-            const tr=closes.map((_,i)=>{const pc=i?closes[i-1]:closes[i];return Math.max(highs[i]-lows[i],Math.abs(highs[i]-pc),Math.abs(lows[i]-pc));});
-            const atr=sma(14,tr),sma20=sma(20,closes),sma50=sma(50,closes),volSma=sma(20,volumes);
-            const bands=closes.map((_,i)=>{const w=closes.slice(Math.max(0,i-19),i+1),m=average(w),sd=Math.sqrt(average(w.map(v=>(v-m)**2)));return{middle:m,upper:m+2*sd,lower:m-2*sd};});
-            return data.map((d,i)=>({...d,ema9:+ema9[i].toFixed(3),ema21:+ema21[i].toFixed(3),ema50:+ema50[i].toFixed(3),sma20:+sma20[i].toFixed(3),sma50:+sma50[i].toFixed(3),bbMiddle:+bands[i].middle.toFixed(3),bbUpper:+bands[i].upper.toFixed(3),bbLower:+bands[i].lower.toFixed(3),atr:+(atr[i]||0).toFixed(3),volumeSma20:Math.round(volSma[i]||0),macd:+(macdLine[i]||0).toFixed(3),signal:+(signalLine[i]||0).toFixed(3),hist:+((macdLine[i]||0)-(signalLine[i]||0)).toFixed(3),rsi:+rsi[i].toFixed(2),trend:ema21[i]>=ema50[i]?'BULLISH':'BEARISH'}));
+
+            const closes = data.map(d => Number(d.close) || 0);
+            const highs = data.map(d => Number(d.high) || 0);
+            const lows = data.map(d => Number(d.low) || 0);
+            const volumes = data.map(d => Number(d.volume) || 0);
+
+            const ema9 = calculateEMA(9, closes);
+            const ema12 = calculateEMA(12, closes);
+            const ema21 = calculateEMA(21, closes);
+            const ema26 = calculateEMA(26, closes);
+            const ema50 = calculateEMA(50, closes);
+
+            const macdLine = ema12.map((value, index) => value - ema26[index]);
+            const signalLine = calculateEMA(9, macdLine);
+            const rsi = calculateRSI(closes, 14);
+
+            const trueRange = calculateTrueRange(closes, highs, lows);
+            const atr = calculateSMA(14, trueRange);
+            const sma20 = calculateSMA(20, closes);
+            const sma50 = calculateSMA(50, closes);
+            const volumeSma20 = calculateSMA(20, volumes);
+            const bands = calculateBollingerBands(closes, 20, 2);
+
+            return data.map((d, index) => ({
+                ...d,
+                ema9: +ema9[index].toFixed(3),
+                ema21: +ema21[index].toFixed(3),
+                ema50: +ema50[index].toFixed(3),
+                sma20: +sma20[index].toFixed(3),
+                sma50: +sma50[index].toFixed(3),
+                bbMiddle: +bands[index].middle.toFixed(3),
+                bbUpper: +bands[index].upper.toFixed(3),
+                bbLower: +bands[index].lower.toFixed(3),
+                atr: +(atr[index] || 0).toFixed(3),
+                volumeSma20: Math.round(volumeSma20[index] || 0),
+                macd: +(macdLine[index] || 0).toFixed(3),
+                signal: +(signalLine[index] || 0).toFixed(3),
+                hist: +((macdLine[index] || 0) - (signalLine[index] || 0)).toFixed(3),
+                rsi: +rsi[index].toFixed(2),
+                trend: ema21[index] >= ema50[index] ? 'BULLISH' : 'BEARISH'
+            }));
         };
 
         // Deterministic demo market data. The mock series intentionally contains
